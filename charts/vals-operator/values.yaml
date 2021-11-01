@@ -1,0 +1,95 @@
+replicaCount: 1
+
+image:
+  repository: digitalisdocker/vals-operator
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+manageCrds: true
+
+# additional arguments to operator
+args: []
+  # -health-probe-bind-address string
+  #   	The address the probe endpoint binds to. (default ":8081")
+  # -kubeconfig string
+  #   	Paths to a kubeconfig. Only required if out-of-cluster.
+  # -leader-elect
+  #   	Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.
+  # -metrics-bind-address string
+  #   	The address the metric endpoint binds to. (default ":8080")
+  # -zap-devel
+  #   	Development Mode defaults(encoder=consoleEncoder,logLevel=Debug,stackTraceLevel=Warn). Production Mode defaults(encoder=jsonEncoder,logLevel=Info,stackTraceLevel=Error) (default true)
+  # -zap-encoder value
+  #   	Zap log encoding (one of 'json' or 'console')
+  # -zap-log-level value
+  #   	Zap Level to configure the verbosity of logging. Can be one of 'debug', 'info', 'error', or any integer value > 0 which corresponds to custom debug levels of increasing verbosity
+  # -zap-stacktrace-level value
+  #   	Zap Level at and above which stacktraces are captured (one of 'info', 'error', 'panic').
+
+# See https://github.com/variantdev/vals
+# for information on setting up your backend environment.
+env: []
+  # - name: VAULT_SKIP_VERIFY
+  #   value: "true"
+
+secretEnv: []
+  # - name: aws-creds
+  #   envFrom:
+  #   - secretRef:
+  #       name: aws-creds
+
+volumes: []
+  # - name: creds
+  #   secret:
+  #     secretName: gcs-credentials
+volumeMounts: []
+  # - name: creds
+  #   mountPath: /secret
+  #   readOnly: true
+
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+metricsPort: 8080
+serviceMonitor:
+  # When set to true then use a ServiceMonitor to collect metrics
+  enabled: false
+  # Custom labels to use in the ServiceMonitor to be matched with a specific Prometheus
+  labels: {}
+  # Set the namespace the ServiceMonitor should be deployed to
+  # namespace: default
+  # Set how frequently Prometheus should scrape
+  # interval: 30s
+  # Set timeout for scrape
+  # scrapeTimeout: 10s
+
+resources: {}
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
