@@ -23,22 +23,30 @@ manageCrds: true
 
 # additional arguments to operator
 args: []
-  # -health-probe-bind-address string
-  #   	The address the probe endpoint binds to. (default ":8081")
-  # -kubeconfig string
-  #   	Paths to a kubeconfig. Only required if out-of-cluster.
-  # -leader-elect
-  #   	Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.
-  # -metrics-bind-address string
-  #   	The address the metric endpoint binds to. (default ":8080")
-  # -zap-devel
-  #   	Development Mode defaults(encoder=consoleEncoder,logLevel=Debug,stackTraceLevel=Warn). Production Mode defaults(encoder=jsonEncoder,logLevel=Info,stackTraceLevel=Error) (default true)
-  # -zap-encoder value
-  #   	Zap log encoding (one of 'json' or 'console')
-  # -zap-log-level value
-  #   	Zap Level to configure the verbosity of logging. Can be one of 'debug', 'info', 'error', or any integer value > 0 which corresponds to custom debug levels of increasing verbosity
-  # -zap-stacktrace-level value
-  #   	Zap Level at and above which stacktraces are captured (one of 'info', 'error', 'panic').
+#   -exclude-namespaces string
+#     	Comma separated list of namespaces to ignore.
+#   -health-probe-bind-address string
+#     	The address the probe endpoint binds to. (default ":8081")
+#   -kubeconfig string
+#     	Paths to a kubeconfig. Only required if out-of-cluster.
+#   -leader-elect
+#     	Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.
+#   -metrics-bind-address string
+#     	The address the metric endpoint binds to. (default ":8080")
+#   -reconcile-period duration
+#     	How often the controller will re-queue secretdefinition events (default 5s)
+#   -record-changes
+#     	Records every time a secret has been updated. You can view them with kubectl describe. It may also be disabled globally and enabled per secret via the annotation 'vals-operator.digitalis.io/record: "true"' (default true)
+#   -watch-namespaces string
+#     	Comma separated list of namespaces that vals-operator will watch.
+#   -zap-devel
+#     	Development Mode defaults(encoder=consoleEncoder,logLevel=Debug,stackTraceLevel=Warn). Production Mode defaults(encoder=jsonEncoder,logLevel=Info,stackTraceLevel=Error) (default true)
+#   -zap-encoder value
+#     	Zap log encoding (one of 'json' or 'console')
+#   -zap-log-level value
+#     	Zap Level to configure the verbosity of logging. Can be one of 'debug', 'info', 'error', or any integer value > 0 which corresponds to custom debug levels of increasing verbosity
+#   -zap-stacktrace-level value
+#     	Zap Level at and above which stacktraces are captured (one of 'info', 'error', 'panic').
 
 # See https://github.com/variantdev/vals
 # for information on setting up your backend environment.
@@ -47,10 +55,8 @@ env: []
   #   value: "true"
 
 secretEnv: []
-  # - name: aws-creds
-  #   envFrom:
-  #   - secretRef:
-  #       name: aws-creds
+  # - secretRef:
+  #     name: aws-creds
 
 volumes: []
   # - name: creds
