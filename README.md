@@ -6,7 +6,7 @@ Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/vari
 
 # Installation
 
-You can use the helm chart to install `vals-opetator`. You will need to provide the configuration to access the secrets store you decided on via either environment variables pre existing secrets.
+You can use the helm chart to install `vals-operator`. You will need to provide the configuration to access the secrets store you decided on via either environment variables pre existing secrets.
 
 ```sh
 # Example for Vault
