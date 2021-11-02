@@ -11,7 +11,7 @@ You can use the helm chart to install `vals-operator`. You will need to provide 
 ```sh
 # Example for Vault
 helm upgrade --install vals-operator --create-namespace -n vals-operator \
-  --set "env[0].name=VAULT_ROLE_ID,env[0].value="vals-opetator"" \
+  --set "env[0].name=VAULT_ROLE_ID,env[0].value="vals-operator"" \
   --set "env[1].name=VAULT_SECRET_ID,env[1].value="my-secret-id"" \
   --set "env[2].name=VAULT_ADDR,env[2].value=https://vault:8200"
   charts/vals-operator
