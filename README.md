@@ -4,6 +4,10 @@ Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/vari
 
 *vals-operator* syncs secrets from any secrets store supported by [vals](https://github.com/variantdev/vals) into Kubernetes. It works very similarly to [secrets-manager](https://github.com/tuenti/secrets-manager) and the code is actually based on it. Where they differ is that it not just supports HashiCorp Vault but many other secrets stores.
 
+## Mirroring secrets
+
+We have also added the ability to copy secrets between namespaces. It uses the format `ref+k8s://namespace/secret#key`. This way you can keep secrets generated in one namespace in sync with any other namespace in the cluster.
+
 # Installation
 
 You can use the helm chart to install `vals-operator`. You will need to provide the configuration to access the secrets store you decided on via either environment variables pre existing secrets.
@@ -65,6 +69,8 @@ spec:
       ref: ref+awssecrets://kube/test#username
     aws-pass:
       ref: ref+awssecrets://kube/test#password
+    ns-secret:
+      ref: ref+k8s://namespace/secret#key
 ```
 
 The example above will create a secret named `my-secret` and get the values from the different sources. The secret will be kept in sync against the backed secrets store.
