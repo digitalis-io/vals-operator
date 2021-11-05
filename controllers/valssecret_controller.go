@@ -188,6 +188,9 @@ func (r *ValsSecretReconciler) getKeyFromK8sSecret(secretRef string) (string, er
 	re := regexp.MustCompile(`ref\+k8s://(?P<namespace>\S+)/(?P<secretName>\S+)#(?P<key>\S+)`)
 	matchMap := FindAllGroups(re, secretRef)
 
+	if !k8sSecretFound(matchMap) {
+		return "", fmt.Errorf("The ref+k8s secret '%s' did not match the regular expression for ref+k8s://namespace/secret-name#key", secretRef)
+	}
 	secret, err := r.getSecret(matchMap["secretName"], matchMap["namespace"])
 	if err != nil {
 		return "", err
@@ -439,4 +442,13 @@ func FindAllGroups(re *regexp.Regexp, s string) map[string]string {
 		matchMap[subnames[i]] = matches[i]
 	}
 	return matchMap
+}
+
+func k8sSecretFound(m map[string]string) bool {
+	for _, k := range []string{"namespace", "secretName", "key"} {
+		if _, ok := m[k]; !ok {
+			return false
+		}
+	}
+	return true
 }
