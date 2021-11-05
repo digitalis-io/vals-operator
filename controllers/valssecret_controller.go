@@ -23,6 +23,8 @@ import (
 	"math"
 	"math/rand"
 	"reflect"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,6 +46,7 @@ const (
 	lastUpdatedAnnotation      = "vals-operator.digitalis.io/last-updated"
 	recordingEnabledAnnotation = "vals-operator.digitalis.io/record"
 	managedByLabel             = "app.kubernetes.io/managed-by"
+	k8sSecretPrefix            = "ref+k8s://"
 )
 
 // ValsSecretReconciler reconciles a ValsSecret object
@@ -65,24 +68,18 @@ type ValsSecretReconciler struct {
 //+kubebuilder:rbac:groups=digitalis.io,resources=valssecrets/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=digitalis.io,resources=valssecrets/finalizers,verbs=update
 
-func (r *ValsSecretReconciler) getSecret(sDef *secretv1.ValsSecret) (*corev1.Secret, error) {
-	var name string
+func (r *ValsSecretReconciler) getSecret(secretName string, namespace string) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
 
-	if sDef.Spec.Name != "" {
-		name = sDef.Spec.Name
-	} else {
-		name = sDef.Name
-	}
 	err := r.Get(r.Ctx, client.ObjectKey{
-		Namespace: sDef.Namespace,
-		Name:      name,
+		Namespace: namespace,
+		Name:      secretName,
 	}, secret)
 	if err != nil {
 		return secret, err
 	}
 
-	return secret, err
+	return secret, nil
 }
 
 // shouldExclude will return true if the secretDefinition is in an excluded namespace
@@ -95,7 +92,13 @@ func (r *ValsSecretReconciler) shouldExclude(sDefNamespace string) bool {
 
 // upsertSecret will create or update a secret
 func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[string][]byte) error {
-	secret, err := r.getSecret(sDef)
+	var secretName string
+	if sDef.Spec.Name != "" {
+		secretName = sDef.Spec.Name
+	} else {
+		secretName = sDef.Name
+	}
+	secret, err := r.getSecret(secretName, sDef.GetNamespace())
 	if client.IgnoreNotFound(err) != nil {
 		return err
 	}
@@ -181,6 +184,23 @@ func (r *ValsSecretReconciler) deleteSecret(ctx context.Context, sDef *secretv1.
 	return client.IgnoreNotFound(r.Delete(ctx, secret))
 }
 
+func (r *ValsSecretReconciler) getKeyFromK8sSecret(secretRef string) (string, error) {
+	re := regexp.MustCompile(`ref\+k8s://(?P<namespace>\S+)/(?P<secretName>\S+)#(?P<key>\S+)`)
+	matchMap := FindAllGroups(re, secretRef)
+
+	if !k8sSecretFound(matchMap) {
+		return "", fmt.Errorf("The ref+k8s secret '%s' did not match the regular expression for ref+k8s://namespace/secret-name#key", secretRef)
+	}
+	secret, err := r.getSecret(matchMap["secretName"], matchMap["namespace"])
+	if err != nil {
+		return "", err
+	}
+
+	v := string(secret.Data[matchMap["key"]])
+
+	return v, nil
+}
+
 func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var secret secretv1.ValsSecret
 
@@ -226,12 +246,17 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 	//! [finalizer]
 
-	currentSecret, err := r.getSecret(&secret)
+	var secretName string
+	if secret.Spec.Name != "" {
+		secretName = secret.Spec.Name
+	} else {
+		secretName = secret.Name
+	}
+	currentSecret, err := r.getSecret(secretName, secret.GetNamespace())
 	if client.IgnoreNotFound(err) != nil {
 		return ctrl.Result{}, err
 	}
 
-	//log.Info("Checking if secret has expired", "name", secret.Name, lastUpdatedAnnotation, currentSecret.GetAnnotations()[lastUpdatedAnnotation], "ttl", secret.Spec.Ttl)
 	if currentSecret.Name != "" && !hasSecretExpired(secret, currentSecret) {
 		return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
 	}
@@ -240,7 +265,18 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	secretYaml := make(map[string]interface{})
 	for k, v := range secret.Spec.Data {
-		secretYaml[k] = v.Ref
+		if strings.HasPrefix(v.Ref, k8sSecretPrefix) {
+			secretYaml[k], err = r.getKeyFromK8sSecret(v.Ref)
+			if err != nil {
+				if r.recordingEnabled(&secret) {
+					msg := fmt.Sprintf("Failed to get key from existing k8s secret %v", err)
+					r.Recorder.Event(&secret, corev1.EventTypeNormal, "Failed", msg)
+				}
+				return r.errorBackoff(&secret)
+			}
+		} else {
+			secretYaml[k] = v.Ref
+		}
 	}
 	valsRendered, err := vals.Eval(secretYaml, vals.Options{})
 	if err != nil {
@@ -255,7 +291,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	data := make(map[string][]byte)
 	for k, v := range valsRendered {
-		if secret.Spec.Data[k].Encoding == "base64" {
+		if secret.Spec.Data[k].Encoding == "base64" && !strings.HasPrefix(secret.Spec.Data[k].Ref, k8sSecretPrefix) {
 			sDec, err := b64.StdEncoding.DecodeString(v.(string))
 			if err != nil {
 				log.Error(err, "Cannot b64 decode secret. Please check encoding configuration. Requeuing.", "name", secret.Name)
@@ -390,4 +426,29 @@ func (r *ValsSecretReconciler) clearErrorCount(valsSecret *secretv1.ValsSecret) 
 		return
 	}
 	delete(r.errorCounts, errKey)
+}
+
+// FindAllGroups returns a map with each match group. The map key corresponds to the match group name.
+// A nil return value indicates no matches.
+func FindAllGroups(re *regexp.Regexp, s string) map[string]string {
+	matches := re.FindStringSubmatch(s)
+	subnames := re.SubexpNames()
+	if matches == nil || len(matches) != len(subnames) {
+		return nil
+	}
+
+	matchMap := map[string]string{}
+	for i := 1; i < len(matches); i++ {
+		matchMap[subnames[i]] = matches[i]
+	}
+	return matchMap
+}
+
+func k8sSecretFound(m map[string]string) bool {
+	for _, k := range []string{"namespace", "secretName", "key"} {
+		if _, ok := m[k]; !ok {
+			return false
+		}
+	}
+	return true
 }
