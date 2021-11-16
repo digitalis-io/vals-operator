@@ -100,17 +100,12 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 		secretName = sDef.Name
 	}
 	secret, err := r.getSecret(secretName, sDef.GetNamespace())
-<<<<<<< HEAD
-	if client.IgnoreNotFound(err) != nil {
-		return err
-=======
 	if err != nil {
 		if client.IgnoreNotFound(err) != nil {
 			return err
 		}
 		// secret not found, create a new empty one
 		secret = &corev1.Secret{}
->>>>>>> origin/master
 	}
 
 	if r.secretNeedsUpdate(sDef, secret, data) {
