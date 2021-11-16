@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -59,6 +58,7 @@ type ValsSecretReconciler struct {
 	ExcludeNamespaces    map[string]bool
 	RecordChanges        bool
 	Recorder             record.EventRecorder
+	SecretTTL            time.Duration
 
 	errorCounts map[string]int
 	errMu       sync.Mutex
@@ -103,18 +103,7 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 		return err
 	}
 
-	labels := map[string]string{
-		managedByLabel: "vals-operator",
-	}
-	annotations := map[string]string{
-		lastUpdatedAnnotation: time.Now().UTC().Format(timeLayout),
-	}
-
-	if secret.Name == "" ||
-		!reflect.DeepEqual(secret.Data, data) ||
-		!reflect.DeepEqual(secret.ObjectMeta.Annotations, sDef.ObjectMeta.Annotations) ||
-		!reflect.DeepEqual(secret.ObjectMeta.Labels, sDef.ObjectMeta.Labels) {
-
+	if r.secretNeedsUpdate(sDef, secret, data) {
 		if sDef.Spec.Name != "" {
 			secret.Name = sDef.Spec.Name
 		} else {
@@ -129,10 +118,13 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 		if secret.ObjectMeta.Annotations == nil {
 			secret.ObjectMeta.Annotations = make(map[string]string)
 		}
-		mergeMap(secret.ObjectMeta.Labels, labels)
+		// Replace all labels and annotations on the secret
+		secret.ObjectMeta.Labels = make(map[string]string)
 		mergeMap(secret.ObjectMeta.Labels, sDef.ObjectMeta.Labels)
-		mergeMap(secret.ObjectMeta.Annotations, annotations)
+		secret.ObjectMeta.Labels[managedByLabel] = "vals-operator"
+		secret.ObjectMeta.Annotations = make(map[string]string)
 		mergeMap(secret.ObjectMeta.Annotations, sDef.ObjectMeta.Annotations)
+		secret.ObjectMeta.Annotations[lastUpdatedAnnotation] = time.Now().UTC().Format(timeLayout)
 	} else {
 		/* Secret already up to date */
 		return nil
@@ -153,6 +145,75 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 	}
 
 	return err
+}
+
+// secretNeedsUpdate Checks if the secret data or definition has changed from the current secret
+func (r *ValsSecretReconciler) secretNeedsUpdate(sDef *secretv1.ValsSecret, secret *corev1.Secret, newData map[string][]byte) bool {
+	return secret == nil || secret.Name == "" ||
+		!r.byteMapsMatch(secret.Data, newData) ||
+		!r.stringMapsMatch(
+			secret.ObjectMeta.Annotations,
+			sDef.ObjectMeta.Annotations,
+			[]string{"kubectl.kubernetes.io/last-applied-configuration", "vals-operator.digitalis.io/last-updated"}) ||
+		!r.stringMapsMatch(
+			secret.ObjectMeta.Labels,
+			sDef.ObjectMeta.Labels,
+			[]string{"app.kubernetes.io/managed-by"})
+}
+
+// stringMapsMatch returns true if the provided maps contain the same keys and values, otherwise false
+func (r *ValsSecretReconciler) stringMapsMatch(m1, m2 map[string]string, ignoreKeys []string) bool {
+	// if both are empty then they must match
+	if (m1 == nil || len(m1) == 0) && (m2 == nil || len(m2) == 0) {
+		return true
+	}
+
+	ignoreMap := make(map[string]struct{})
+	for _, k := range ignoreKeys {
+		ignoreMap[k] = struct{}{}
+	}
+
+	for k, v := range m1 {
+		if _, ignore := ignoreMap[k]; ignore {
+			continue
+		}
+		v2, ok := m2[k]
+		if !ok || v2 != v {
+			return false
+		}
+	}
+	for k, v := range m2 {
+		if _, ignore := ignoreMap[k]; ignore {
+			continue
+		}
+		v1, ok := m1[k]
+		if !ok || v1 != v {
+			return false
+		}
+	}
+	return true
+}
+
+// byteMapsMatch is like stringMapsMatch but for maps of byte arrays
+func (r *ValsSecretReconciler) byteMapsMatch(m1, m2 map[string][]byte) bool {
+	if len(m1) != len(m2) {
+		return false
+	}
+	for k, v := range m1 {
+		v2, ok := m2[k]
+		if !ok {
+			return false
+		}
+		if len(v2) != len(v) {
+			return false
+		}
+		for i, c := range v {
+			if v2[i] != c {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // recordingEnabled check if we want the event recorded
@@ -257,11 +318,9 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
-	if currentSecret.Name != "" && !hasSecretExpired(secret, currentSecret) {
+	if currentSecret.Name != "" && !r.hasSecretExpired(secret, currentSecret) {
 		return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
 	}
-
-	log.Info("Renewing expired secret", "name", secret.Name, lastUpdatedAnnotation, currentSecret.GetAnnotations()[lastUpdatedAnnotation], "ttl", secret.Spec.Ttl)
 
 	secretYaml := make(map[string]interface{})
 	for k, v := range secret.Spec.Data {
@@ -333,10 +392,10 @@ func containsString(slice []string, s string) bool {
 	return false
 }
 
-func hasSecretExpired(sDef secretv1.ValsSecret, secret *corev1.Secret) bool {
-	/* if no TTL, mark it as expired always */
+func (r *ValsSecretReconciler) hasSecretExpired(sDef secretv1.ValsSecret, secret *corev1.Secret) bool {
+	/* if no TTL, apply a sensible default */
 	if sDef.Spec.Ttl <= 0 {
-		return true
+		sDef.Spec.Ttl = int64(r.SecretTTL.Seconds())
 	}
 
 	lastUpdated := secret.GetAnnotations()[lastUpdatedAnnotation]
