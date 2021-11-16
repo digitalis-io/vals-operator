@@ -42,6 +42,15 @@ helm upgrade --install vals-operator --create-namespace -n vals-operator \
   charts/vals-operator
 ```
 
+## HashiCorp Vault Authentication
+
+If you're using Vault as backend you can also enable the Kubernetes Auth login method. Refer to the [HashiCorp documentation](https://www.vaultproject.io/docs/auth/kubernetes) on creating a role. 
+
+You will need to add two additional environment variables to the `vals-operator` installation:
+
+* VAULT_ROLE_ID: name of the Kubernetes Role you created granting access to read the secrets
+* VAULT_AUTH_METHOD: set it to `kubernetes`
+
 # Usage
 
 ```yaml
