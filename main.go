@@ -60,12 +60,12 @@ func main() {
 	var watchNamespaces string
 	var excludeNamespaces string
 	var recordChanges bool
-	var secretTTL time.Duration
+	var defaultTTL time.Duration
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.DurationVar(&reconcilePeriod, "reconcile-period", 5*time.Second, "How often the controller will re-queue vals-operator events.")
-	flag.DurationVar(&secretTTL, "ttl", 300*time.Second, "How often to check backend for updates.")
+	flag.DurationVar(&defaultTTL, "ttl", 300*time.Second, "How often to check backend for updates.")
 	flag.StringVar(&watchNamespaces, "watch-namespaces", "", "Comma separated list of namespaces that vals-operator will watch.")
 	flag.StringVar(&excludeNamespaces, "exclude-namespaces", "", "Comma separated list of namespaces to ignore.")
 	flag.BoolVar(&recordChanges, "record-changes", true, "Records every time a secret has been updated. You can view them with kubectl describe. "+
@@ -115,7 +115,7 @@ func main() {
 		ReconciliationPeriod: reconcilePeriod,
 		ExcludeNamespaces:    excludeNs,
 		RecordChanges:        recordChanges,
-		SecretTTL:            secretTTL,
+		DefaultTTL:           defaultTTL,
 		Log:                  ctrl.Log.WithName("controllers").WithName("vals-operator"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ValsSecret")

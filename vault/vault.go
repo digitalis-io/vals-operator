@@ -33,8 +33,6 @@ func fileExists(name string) (bool, error) {
 }
 
 func vaultClient() (*api.Client, error) {
-	var client *api.Client
-	var err error
 	var vaultSkipVerify bool = false
 
 	vaultUrl := os.Getenv("VAULT_ADDR")
@@ -42,7 +40,7 @@ func vaultClient() (*api.Client, error) {
 		vaultSkipVerify = true
 	}
 	if vaultUrl == "" {
-		return client, fmt.Errorf("VAULT_ADDR is not set")
+		return nil, fmt.Errorf("VAULT_ADDR is not set")
 	}
 
 	tr := &http.Transport{
@@ -52,12 +50,7 @@ func vaultClient() (*api.Client, error) {
 	httpClient := &http.Client{Transport: tr}
 
 	// create a vault client
-	client, err = api.NewClient(&api.Config{Address: vaultUrl, HttpClient: httpClient})
-	if err != nil {
-		return client, err
-	}
-
-	return client, err
+	return api.NewClient(&api.Config{Address: vaultUrl, HttpClient: httpClient})
 }
 
 func renewToken() (float64, error) {
@@ -112,10 +105,10 @@ func kubeLogin() error {
 		return err
 	}
 	fd, err := os.Open(kubernetesJwtTokenPath)
-	defer fd.Close()
 	if err != nil {
 		return err
 	}
+	defer fd.Close()
 
 	jwt, err := ioutil.ReadAll(fd)
 	if err != nil {
@@ -163,6 +156,7 @@ func Start() error {
 			tokenTTL, err := renewToken()
 			if err != nil {
 				log.Error(err, "Error renewing vault token")
+				time.Sleep(time.Second * 60)
 				continue
 			}
 			log.Info(fmt.Sprintf("Vault token will expire in %v seconds", tokenTTL))

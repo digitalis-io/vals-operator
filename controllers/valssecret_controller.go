@@ -58,7 +58,7 @@ type ValsSecretReconciler struct {
 	ExcludeNamespaces    map[string]bool
 	RecordChanges        bool
 	Recorder             record.EventRecorder
-	SecretTTL            time.Duration
+	DefaultTTL           time.Duration
 
 	errorCounts map[string]int
 	errMu       sync.Mutex
@@ -325,7 +325,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
-	if currentSecret != nil && currentSecret.Name != "" && !hasSecretExpired(secret, currentSecret) {
+	if currentSecret != nil && currentSecret.Name != "" && !r.hasSecretExpired(secret, currentSecret) {
 		return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
 	}
 
@@ -402,7 +402,7 @@ func containsString(slice []string, s string) bool {
 func (r *ValsSecretReconciler) hasSecretExpired(sDef secretv1.ValsSecret, secret *corev1.Secret) bool {
 	/* if no TTL, apply a sensible default */
 	if sDef.Spec.Ttl <= 0 {
-		sDef.Spec.Ttl = int64(r.SecretTTL.Seconds())
+		sDef.Spec.Ttl = int64(r.DefaultTTL.Seconds())
 	}
 
 	lastUpdated := secret.GetAnnotations()[lastUpdatedAnnotation]
