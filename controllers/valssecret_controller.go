@@ -69,17 +69,17 @@ type ValsSecretReconciler struct {
 //+kubebuilder:rbac:groups=digitalis.io,resources=valssecrets/finalizers,verbs=update
 
 func (r *ValsSecretReconciler) getSecret(secretName string, namespace string) (*corev1.Secret, error) {
-	secret := &corev1.Secret{}
+	var secret corev1.Secret
 
 	err := r.Get(r.Ctx, client.ObjectKey{
 		Namespace: namespace,
 		Name:      secretName,
-	}, secret)
+	}, &secret)
 	if err != nil {
-		return secret, err
+		return nil, err
 	}
 
-	return secret, nil
+	return &secret, nil
 }
 
 // shouldExclude will return true if the secretDefinition is in an excluded namespace
@@ -92,6 +92,7 @@ func (r *ValsSecretReconciler) shouldExclude(sDefNamespace string) bool {
 
 // upsertSecret will create or update a secret
 func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[string][]byte) error {
+	log := ctrl.Log.WithName("vals-operator")
 	var secretName string
 	if sDef.Spec.Name != "" {
 		secretName = sDef.Spec.Name
@@ -99,8 +100,17 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 		secretName = sDef.Name
 	}
 	secret, err := r.getSecret(secretName, sDef.GetNamespace())
+<<<<<<< HEAD
 	if client.IgnoreNotFound(err) != nil {
 		return err
+=======
+	if err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return err
+		}
+		// secret not found, create a new empty one
+		secret = &corev1.Secret{}
+>>>>>>> origin/master
 	}
 
 	if r.secretNeedsUpdate(sDef, secret, data) {
@@ -143,6 +153,8 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 		msg := fmt.Sprintf("Secret %s not saved %v", secret.Name, err)
 		r.Recorder.Event(sDef, corev1.EventTypeNormal, "Failed", msg)
 	}
+
+	log.Info("Updated secret", "name", secretName)
 
 	return err
 }
@@ -318,7 +330,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
-	if currentSecret.Name != "" && !r.hasSecretExpired(secret, currentSecret) {
+	if currentSecret != nil && currentSecret.Name != "" && !hasSecretExpired(secret, currentSecret) {
 		return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
 	}
 
