@@ -10,7 +10,13 @@ We have also added the ability to copy secrets between namespaces. It uses the f
 
 # Installation
 
-You can use the helm chart to install `vals-operator`. You will need to provide the configuration to access the secrets store you decided on via either environment variables pre existing secrets.
+You can use the helm chart to install `vals-operator`. First of all, add the repository to your helm installation:
+
+```sh
+helm repo add digitalis https://digitalis-io.github.io/helm-charts
+```
+
+You will need to provide the configuration to access the secrets store you decided on via either environment variables pre existing secrets.
 
 ```sh
 # Example for Vault
@@ -18,7 +24,7 @@ helm upgrade --install vals-operator --create-namespace -n vals-operator \
   --set "env[0].name=VAULT_ROLE_ID,env[0].value=vals-operator" \
   --set "env[1].name=VAULT_SECRET_ID,env[1].value=my-secret-id" \
   --set "env[2].name=VAULT_ADDR,env[2].value=https://vault:8200"
-  charts/vals-operator
+  digitalis/vals-operator
 
 # Example for AWS using a secret
 kubectl create secret generic -n vals-operator aws-creds \
@@ -28,7 +34,7 @@ kubectl create secret generic -n vals-operator aws-creds \
 
 helm upgrade --install vals-operator --create-namespace -n vals-operator \
   --set "secretEnv[0].secretRef.name=aws-creds"  \
-  charts/vals-operator
+  digitalis/vals-operator
 
 # Another example using a Google Cloud service account
 kubectl create secret generic -n vals-operator google-creds \
@@ -39,7 +45,7 @@ helm upgrade --install vals-operator --create-namespace -n vals-operator \
   --set "env[1].name=GCP_PROJECT,env[1].value=my_project" \
   --set "volumes[0].name=creds,volumes[0].secret.secretName=google-creds" \
   --set "volumeMounts[0].name=creds,volumeMounts[0].mountPath=/secret" \
-  charts/vals-operator
+  digitalis/vals-operator
 ```
 
 ## HashiCorp Vault Authentication
