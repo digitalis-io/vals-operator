@@ -43,8 +43,10 @@ spec:
           envFrom:
             {{- toYaml .Values.secretEnv | nindent 12 }}
           {{- end }}
-          envFrom:
-            {{- toYaml .Values.secretEnv | nindent 12 }}
+          {{- if .Values.env }}
+          env:
+            {{- toYaml .Values.env | nindent 12 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if .Values.volumeMounts }}
