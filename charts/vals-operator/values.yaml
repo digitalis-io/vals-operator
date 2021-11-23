@@ -48,6 +48,9 @@ args: []
 #   -zap-stacktrace-level value
 #     	Zap Level at and above which stacktraces are captured (one of 'info', 'error', 'panic').
 
+
+environmentSecret: ""
+
 # See https://github.com/variantdev/vals
 # for information on setting up your backend environment.
 env: []
