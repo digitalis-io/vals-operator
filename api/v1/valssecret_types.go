@@ -31,12 +31,41 @@ type DataSource struct {
 	Encoding string `json:"encoding,omitempty"`
 }
 
+type DatabaseLoginCredentials struct {
+	// Name of the secret containing the credentials to be able to log in to the database
+	SecretName string `json:"secretName"`
+	// Optional namespace of the secret, default current namespace
+	Namespace string `json:"namespace,omitempty"`
+	// Key in the secret containing the database username
+	UsernameKey string `json:"usernameKey,omitempty"`
+	// Key in the secret containing the database username
+	PasswordKey string `json:"passwordKey"`
+}
+
+type Database struct {
+	// Defines the database type
+	Driver string `json:"driver"`
+	// Credentials to access the database
+	LoginCredentials DatabaseLoginCredentials `json:"loginCredentials,omitempty"`
+	// Database port number
+	Port int `json:"port,omitempty"`
+	// Key in the secret containing the database username
+	UsernameKey string `json:"usernameKey,omitempty"`
+	// Key in the secret containing the database username
+	PasswordKey string `json:"passwordKey"`
+	// Used for MySQL only, the host part for the username
+	UserHost string `json:"userHost,omitempty"`
+	// List of hosts to connect to, they'll be tried in sequence until one succeeds
+	Hosts []string `json:"hosts"`
+}
+
 // ValsSecretSpec defines the desired state of ValsSecret
 type ValsSecretSpec struct {
-	Name string                `json:"name,omitempty"`
-	Data map[string]DataSource `json:"data"`
-	Ttl  int64                 `json:"ttl,omitempty"`
-	Type string                `json:"type,omitempty"`
+	Name      string                `json:"name,omitempty"`
+	Data      map[string]DataSource `json:"data"`
+	Ttl       int64                 `json:"ttl,omitempty"`
+	Type      string                `json:"type,omitempty"`
+	Databases []Database            `json:"databases,omitempty"`
 }
 
 // ValsSecretStatus defines the observed state of ValsSecret

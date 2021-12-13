@@ -38,6 +38,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	secretv1 "digitalis.io/vals-operator/api/v1"
+	valsDb "digitalis.io/vals-operator/db"
+	dbType "digitalis.io/vals-operator/db/types"
 )
 
 const (
@@ -68,211 +70,17 @@ type ValsSecretReconciler struct {
 //+kubebuilder:rbac:groups=digitalis.io,resources=valssecrets/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=digitalis.io,resources=valssecrets/finalizers,verbs=update
 
-func (r *ValsSecretReconciler) getSecret(secretName string, namespace string) (*corev1.Secret, error) {
-	var secret corev1.Secret
+// SetupWithManager sets up the controller with the Manager.
+func (r *ValsSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.Recorder = mgr.GetEventRecorderFor("Secrets")
 
-	err := r.Get(r.Ctx, client.ObjectKey{
-		Namespace: namespace,
-		Name:      secretName,
-	}, &secret)
-	if err != nil {
-		return nil, err
-	}
-
-	return &secret, nil
-}
-
-// shouldExclude will return true if the secretDefinition is in an excluded namespace
-func (r *ValsSecretReconciler) shouldExclude(sDefNamespace string) bool {
-	if len(r.ExcludeNamespaces) > 0 {
-		return r.ExcludeNamespaces[sDefNamespace]
-	}
-	return false
-}
-
-// upsertSecret will create or update a secret
-func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[string][]byte) error {
-	log := ctrl.Log.WithName("vals-operator")
-	var secretName string
-	if sDef.Spec.Name != "" {
-		secretName = sDef.Spec.Name
-	} else {
-		secretName = sDef.Name
-	}
-	secret, err := r.getSecret(secretName, sDef.GetNamespace())
-	if err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return err
-		}
-		// secret not found, create a new empty one
-		secret = &corev1.Secret{}
-	}
-
-	if r.secretNeedsUpdate(sDef, secret, data) {
-		if sDef.Spec.Name != "" {
-			secret.Name = sDef.Spec.Name
-		} else {
-			secret.Name = sDef.Name
-		}
-		secret.Namespace = sDef.Namespace
-		secret.Data = data
-		secret.Type = corev1.SecretType(sDef.Spec.Type)
-		if secret.ObjectMeta.Labels == nil {
-			secret.ObjectMeta.Labels = make(map[string]string)
-		}
-		if secret.ObjectMeta.Annotations == nil {
-			secret.ObjectMeta.Annotations = make(map[string]string)
-		}
-		// Replace all labels and annotations on the secret
-		secret.ObjectMeta.Labels = make(map[string]string)
-		mergeMap(secret.ObjectMeta.Labels, sDef.ObjectMeta.Labels)
-		secret.ObjectMeta.Labels[managedByLabel] = "vals-operator"
-		secret.ObjectMeta.Annotations = make(map[string]string)
-		mergeMap(secret.ObjectMeta.Annotations, sDef.ObjectMeta.Annotations)
-		secret.ObjectMeta.Annotations[lastUpdatedAnnotation] = time.Now().UTC().Format(timeLayout)
-	} else {
-		/* Secret already up to date */
-		return nil
-	}
-
-	delete(secret.ObjectMeta.Annotations, corev1.LastAppliedConfigAnnotation)
-	secret.ResourceVersion = ""
-
-	err = r.Create(r.Ctx, secret)
-	if errors.IsAlreadyExists(err) {
-		err = r.Update(r.Ctx, secret)
-	}
-	if err == nil && r.recordingEnabled(sDef) {
-		r.Recorder.Event(sDef, corev1.EventTypeNormal, "Updated", "Secret created or updated")
-	} else if err != nil && r.recordingEnabled(sDef) {
-		msg := fmt.Sprintf("Secret %s not saved %v", secret.Name, err)
-		r.Recorder.Event(sDef, corev1.EventTypeNormal, "Failed", msg)
-	}
-
-	log.Info("Updated secret", "name", secretName)
-
-	return err
-}
-
-// secretNeedsUpdate Checks if the secret data or definition has changed from the current secret
-func (r *ValsSecretReconciler) secretNeedsUpdate(sDef *secretv1.ValsSecret, secret *corev1.Secret, newData map[string][]byte) bool {
-	return secret == nil || secret.Name == "" ||
-		!r.byteMapsMatch(secret.Data, newData) ||
-		!r.stringMapsMatch(
-			secret.ObjectMeta.Annotations,
-			sDef.ObjectMeta.Annotations,
-			[]string{"kubectl.kubernetes.io/last-applied-configuration", "vals-operator.digitalis.io/last-updated"}) ||
-		!r.stringMapsMatch(
-			secret.ObjectMeta.Labels,
-			sDef.ObjectMeta.Labels,
-			[]string{"app.kubernetes.io/managed-by"})
-}
-
-// stringMapsMatch returns true if the provided maps contain the same keys and values, otherwise false
-func (r *ValsSecretReconciler) stringMapsMatch(m1, m2 map[string]string, ignoreKeys []string) bool {
-	// if both are empty then they must match
-	if (m1 == nil || len(m1) == 0) && (m2 == nil || len(m2) == 0) {
-		return true
-	}
-
-	ignoreMap := make(map[string]struct{})
-	for _, k := range ignoreKeys {
-		ignoreMap[k] = struct{}{}
-	}
-
-	for k, v := range m1 {
-		if _, ignore := ignoreMap[k]; ignore {
-			continue
-		}
-		v2, ok := m2[k]
-		if !ok || v2 != v {
-			return false
-		}
-	}
-	for k, v := range m2 {
-		if _, ignore := ignoreMap[k]; ignore {
-			continue
-		}
-		v1, ok := m1[k]
-		if !ok || v1 != v {
-			return false
-		}
-	}
-	return true
-}
-
-// byteMapsMatch is like stringMapsMatch but for maps of byte arrays
-func (r *ValsSecretReconciler) byteMapsMatch(m1, m2 map[string][]byte) bool {
-	if len(m1) != len(m2) {
-		return false
-	}
-	for k, v := range m1 {
-		v2, ok := m2[k]
-		if !ok {
-			return false
-		}
-		if len(v2) != len(v) {
-			return false
-		}
-		for i, c := range v {
-			if v2[i] != c {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-// recordingEnabled check if we want the event recorded
-func (r *ValsSecretReconciler) recordingEnabled(sDef *secretv1.ValsSecret) bool {
-	recordAnn := sDef.GetAnnotations()[recordingEnabledAnnotation]
-	if recordAnn != "" && recordAnn != "true" {
-		return false
-	}
-
-	return r.RecordChanges
-}
-
-// deleteSecret will delete a secret given its namespace and name
-func (r *ValsSecretReconciler) deleteSecret(ctx context.Context, sDef *secretv1.ValsSecret) error {
-	var name string
-
-	if sDef.Spec.Name != "" {
-		name = sDef.Spec.Name
-	} else {
-		name = sDef.Name
-	}
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: sDef.Namespace,
-			Name:      name,
-		},
-	}
-
-	return client.IgnoreNotFound(r.Delete(ctx, secret))
-}
-
-func (r *ValsSecretReconciler) getKeyFromK8sSecret(secretRef string) (string, error) {
-	re := regexp.MustCompile(`ref\+k8s://(?P<namespace>\S+)/(?P<secretName>\S+)#(?P<key>\S+)`)
-	matchMap := FindAllGroups(re, secretRef)
-
-	if !k8sSecretFound(matchMap) {
-		return "", fmt.Errorf("The ref+k8s secret '%s' did not match the regular expression for ref+k8s://namespace/secret-name#key", secretRef)
-	}
-	secret, err := r.getSecret(matchMap["secretName"], matchMap["namespace"])
-	if err != nil {
-		return "", err
-	}
-
-	v := string(secret.Data[matchMap["key"]])
-
-	return v, nil
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&secretv1.ValsSecret{}).
+		Complete(r)
 }
 
 func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var secret secretv1.ValsSecret
-
-	log := ctrl.Log.WithName("vals-operator")
 
 	err := r.Get(ctx, req.NamespacedName, &secret)
 	if err != nil {
@@ -280,7 +88,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	if r.shouldExclude(secret.Namespace) {
-		log.Info("Namespace requested is in the exclusion list, ignoring", "excluded_namespaces", r.ExcludeNamespaces)
+		r.Log.Info("Namespace requested is in the exclusion list, ignoring", "excluded_namespaces", r.ExcludeNamespaces)
 		return ctrl.Result{}, nil
 	}
 	//! [finalizer]
@@ -298,7 +106,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if containsString(secret.GetFinalizers(), valsSecretFinalizerName) {
 			// our finalizer is present, so lets handle any external dependency
 			if err := r.deleteSecret(ctx, &secret); err != nil {
-				log.Error(err, "Error deleting from Vals-Secret")
+				r.Log.Error(err, "Error deleting from Vals-Secret")
 				return ctrl.Result{}, client.IgnoreNotFound(err)
 			}
 
@@ -310,6 +118,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 
 		// Stop reconciliation as the item is being deleted
+		r.Log.Info(fmt.Sprintf("Secret %s deleted", secret.Name))
 		return ctrl.Result{}, nil
 	}
 	//! [finalizer]
@@ -346,7 +155,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 	valsRendered, err := vals.Eval(secretYaml, vals.Options{})
 	if err != nil {
-		log.Error(err, "Failed to get secrets from secrets store", "name", secret.Name)
+		r.Log.Error(err, "Failed to get secrets from secrets store", "name", secret.Name)
 		if r.recordingEnabled(&secret) {
 			msg := fmt.Sprintf("Failed to get secrets from secrets store %v", err)
 			r.Recorder.Event(&secret, corev1.EventTypeNormal, "Failed", msg)
@@ -360,7 +169,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if secret.Spec.Data[k].Encoding == "base64" && !strings.HasPrefix(secret.Spec.Data[k].Ref, k8sSecretPrefix) {
 			sDec, err := b64.StdEncoding.DecodeString(v.(string))
 			if err != nil {
-				log.Error(err, "Cannot b64 decode secret. Please check encoding configuration. Requeuing.", "name", secret.Name)
+				r.Log.Error(err, "Cannot b64 decode secret. Please check encoding configuration. Requeuing.", "name", secret.Name)
 				if r.recordingEnabled(&secret) {
 					r.Recorder.Event(&secret, corev1.EventTypeNormal, "Failed", "Base64 decoding failed")
 				}
@@ -374,29 +183,210 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 	err = r.upsertSecret(&secret, data)
 	if err != nil {
-		log.Error(err, "Failed to create secret")
+		r.Log.Error(err, "Failed to create secret")
 		return ctrl.Result{}, nil
 	}
 
-	log.WithValues("vals-operator", fmt.Sprintf("secret %s created or updated successfully", secret.Name))
 	r.clearErrorCount(&secret)
 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
 }
 
-func mergeMap(dst map[string]string, srcMap map[string]string) {
-	for k, v := range srcMap {
-		dst[k] = v
+func (r *ValsSecretReconciler) getSecret(secretName string, namespace string) (*corev1.Secret, error) {
+	var secret corev1.Secret
+
+	err := r.Get(r.Ctx, client.ObjectKey{
+		Namespace: namespace,
+		Name:      secretName,
+	}, &secret)
+	if err != nil {
+		return nil, err
+	}
+
+	return &secret, nil
+}
+
+// shouldExclude will return true if the secretDefinition is in an excluded namespace
+func (r *ValsSecretReconciler) shouldExclude(sDefNamespace string) bool {
+	if len(r.ExcludeNamespaces) > 0 {
+		return r.ExcludeNamespaces[sDefNamespace]
+	}
+	return false
+}
+
+// upsertSecret will create or update a secret
+func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[string][]byte) error {
+	var secretName string
+	if sDef.Spec.Name != "" {
+		secretName = sDef.Spec.Name
+	} else {
+		secretName = sDef.Name
+	}
+	secret, err := r.getSecret(secretName, sDef.GetNamespace())
+	if err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return err
+		}
+		// secret not found, create a new empty one
+		secret = &corev1.Secret{}
+	}
+
+	// Do nothing if the secret does not need updating
+	if !r.secretNeedsUpdate(sDef, secret, data) {
+		return nil
+	}
+
+	if sDef.Spec.Name != "" {
+		secret.Name = sDef.Spec.Name
+	} else {
+		secret.Name = sDef.Name
+	}
+	secret.Namespace = sDef.Namespace
+	secret.Data = data
+	secret.Type = corev1.SecretType(sDef.Spec.Type)
+	if secret.ObjectMeta.Labels == nil {
+		secret.ObjectMeta.Labels = make(map[string]string)
+	}
+	if secret.ObjectMeta.Annotations == nil {
+		secret.ObjectMeta.Annotations = make(map[string]string)
+	}
+	// Replace all labels and annotations on the secret
+	mergeMap(secret.ObjectMeta.Labels, sDef.ObjectMeta.Labels)
+	secret.ObjectMeta.Labels[managedByLabel] = "vals-operator"
+	mergeMap(secret.ObjectMeta.Annotations, sDef.ObjectMeta.Annotations)
+	secret.ObjectMeta.Annotations[lastUpdatedAnnotation] = time.Now().UTC().Format(timeLayout)
+	delete(secret.ObjectMeta.Annotations, corev1.LastAppliedConfigAnnotation)
+	secret.ResourceVersion = ""
+
+	err = r.Create(r.Ctx, secret)
+	if errors.IsAlreadyExists(err) {
+		err = r.Update(r.Ctx, secret)
+	}
+
+	if err != nil {
+		if r.recordingEnabled(sDef) {
+			msg := fmt.Sprintf("Secret %s not saved %v", secret.Name, err)
+			r.Recorder.Event(sDef, corev1.EventTypeNormal, "Failed", msg)
+		}
+		return err
+	}
+
+	if r.recordingEnabled(sDef) {
+		r.Recorder.Event(sDef, corev1.EventTypeNormal, "Updated", "Secret created or updated")
+	}
+	r.Log.Info("Updated secret", "name", secretName)
+
+	if len(sDef.Spec.Databases) > 0 {
+		r.updateDatabases(sDef, secret)
+	} // end DB section
+
+	return err
+}
+
+func (r *ValsSecretReconciler) updateDatabases(sDef *secretv1.ValsSecret, secret *corev1.Secret) {
+	r.Log.Info("Syncing credentials to databases")
+	for db := range sDef.Spec.Databases {
+		if sDef.Spec.Databases[db].LoginCredentials.SecretName != "" {
+			namespace := sDef.Spec.Databases[db].LoginCredentials.Namespace
+			if sDef.Spec.Databases[db].LoginCredentials.Namespace == "" {
+				namespace = sDef.Namespace
+			}
+			dbSecret, err := r.getSecret(sDef.Spec.Databases[db].LoginCredentials.SecretName, namespace)
+			if err != nil {
+				msg := fmt.Sprintf("Could not get secret %s", sDef.Spec.Databases[db].LoginCredentials.SecretName)
+				r.Log.Error(err, msg)
+				if r.recordingEnabled(sDef) {
+					r.Recorder.Event(sDef, corev1.EventTypeNormal, "Failed", msg)
+				}
+				// don't give up just yet, there may be other databases
+				continue
+			}
+			loginUsername := ""
+			if sDef.Spec.Databases[db].LoginCredentials.UsernameKey != "" {
+				loginUsername = string(dbSecret.Data[sDef.Spec.Databases[db].LoginCredentials.UsernameKey])
+			}
+
+			username := string(secret.Data[sDef.Spec.Databases[db].UsernameKey])
+			password := string(secret.Data[sDef.Spec.Databases[db].PasswordKey])
+
+			if username == "" || password == "" {
+				msg := fmt.Sprintf("'%s' or '%s' keys do not point to a valid username or password",
+					sDef.Spec.Databases[db].UsernameKey, sDef.Spec.Databases[db].PasswordKey)
+				r.Log.Error(err, msg)
+				return
+			}
+
+			dbQuery := dbType.DatabaseQuery{
+				Username:      username,
+				Password:      password,
+				UserHost:      string(dbSecret.Data[sDef.Spec.Databases[db].UserHost]),
+				LoginUsername: loginUsername,
+				LoginPassword: string(dbSecret.Data[sDef.Spec.Databases[db].LoginCredentials.PasswordKey]),
+				Driver:        sDef.Spec.Databases[db].Driver,
+				Hosts:         sDef.Spec.Databases[db].Hosts,
+				Port:          sDef.Spec.Databases[db].Port,
+			}
+			if err := valsDb.UpdateUserPassword(dbQuery); err != nil {
+				r.Log.Error(err, "Cannot update DB password")
+				if r.recordingEnabled(sDef) {
+					r.Recorder.Event(sDef, corev1.EventTypeNormal, "Failed", "Cannot update database password")
+				}
+			}
+		}
 	}
 }
 
-// Helper functions to check and remove string from a slice of strings.
-func containsString(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
-		}
+// secretNeedsUpdate Checks if the secret data or definition has changed from the current secret
+func (r *ValsSecretReconciler) secretNeedsUpdate(sDef *secretv1.ValsSecret, secret *corev1.Secret, newData map[string][]byte) bool {
+	return secret == nil || secret.Name == "" ||
+		!byteMapsMatch(secret.Data, newData) ||
+		!stringMapsMatch(
+			secret.ObjectMeta.Annotations,
+			sDef.ObjectMeta.Annotations,
+			[]string{"kubectl.kubernetes.io/last-applied-configuration", "vals-operator.digitalis.io/last-updated"}) ||
+		!stringMapsMatch(
+			secret.ObjectMeta.Labels,
+			sDef.ObjectMeta.Labels,
+			[]string{"app.kubernetes.io/managed-by"})
+}
+
+// recordingEnabled check if we want the event recorded
+func (r *ValsSecretReconciler) recordingEnabled(sDef *secretv1.ValsSecret) bool {
+	recordAnn := sDef.GetAnnotations()[recordingEnabledAnnotation]
+	if recordAnn != "" && recordAnn != "true" {
+		return false
 	}
-	return false
+	return r.RecordChanges
+}
+
+// deleteSecret will delete a secret given its namespace and name
+func (r *ValsSecretReconciler) deleteSecret(ctx context.Context, sDef *secretv1.ValsSecret) error {
+	var name string
+	if sDef.Spec.Name != "" {
+		name = sDef.Spec.Name
+	} else {
+		name = sDef.Name
+	}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: sDef.Namespace,
+			Name:      name,
+		},
+	}
+	return client.IgnoreNotFound(r.Delete(ctx, secret))
+}
+
+func (r *ValsSecretReconciler) getKeyFromK8sSecret(secretRef string) (string, error) {
+	re := regexp.MustCompile(`ref\+k8s://(?P<namespace>\S+)/(?P<secretName>\S+)#(?P<key>\S+)`)
+	matchMap := findAllGroups(re, secretRef)
+
+	if !k8sSecretFound(matchMap) {
+		return "", fmt.Errorf("The ref+k8s secret '%s' did not match the regular expression for ref+k8s://namespace/secret-name#key", secretRef)
+	}
+	secret, err := r.getSecret(matchMap["secretName"], matchMap["namespace"])
+	if err != nil {
+		return "", err
+	}
+	return string(secret.Data[matchMap["key"]]), nil
 }
 
 func (r *ValsSecretReconciler) hasSecretExpired(sDef secretv1.ValsSecret, secret *corev1.Secret) bool {
@@ -406,7 +396,6 @@ func (r *ValsSecretReconciler) hasSecretExpired(sDef secretv1.ValsSecret, secret
 	}
 
 	lastUpdated := secret.GetAnnotations()[lastUpdatedAnnotation]
-
 	if lastUpdated == "" {
 		return true
 	}
@@ -422,25 +411,6 @@ func (r *ValsSecretReconciler) hasSecretExpired(sDef secretv1.ValsSecret, secret
 	}
 
 	return false
-}
-
-func removeString(slice []string, s string) (result []string) {
-	for _, item := range slice {
-		if item == s {
-			continue
-		}
-		result = append(result, item)
-	}
-	return
-}
-
-// SetupWithManager sets up the controller with the Manager.
-func (r *ValsSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.Recorder = mgr.GetEventRecorderFor("Secrets")
-
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&secretv1.ValsSecret{}).
-		Complete(r)
 }
 
 // errorBackoff Increments the error count annotation and uses it to calculate the backoff time
@@ -492,29 +462,4 @@ func (r *ValsSecretReconciler) clearErrorCount(valsSecret *secretv1.ValsSecret) 
 		return
 	}
 	delete(r.errorCounts, errKey)
-}
-
-// FindAllGroups returns a map with each match group. The map key corresponds to the match group name.
-// A nil return value indicates no matches.
-func FindAllGroups(re *regexp.Regexp, s string) map[string]string {
-	matches := re.FindStringSubmatch(s)
-	subnames := re.SubexpNames()
-	if matches == nil || len(matches) != len(subnames) {
-		return nil
-	}
-
-	matchMap := map[string]string{}
-	for i := 1; i < len(matches); i++ {
-		matchMap[subnames[i]] = matches[i]
-	}
-	return matchMap
-}
-
-func k8sSecretFound(m map[string]string) bool {
-	for _, k := range []string{"namespace", "secretName", "key"} {
-		if _, ok := m[k]; !ok {
-			return false
-		}
-	}
-	return true
 }

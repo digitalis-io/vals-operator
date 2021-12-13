@@ -159,7 +159,7 @@ func Start() error {
 				time.Sleep(time.Second * 60)
 				continue
 			}
-			log.Info(fmt.Sprintf("Vault token will expire in %v seconds", tokenTTL))
+
 			/* Wait for near the time when token expires */
 			if tokenTTL > 0 {
 				var sleepTime float64 = tokenTTL
@@ -167,6 +167,9 @@ func Start() error {
 					sleepTime = sleepTime - 120
 				}
 				time.Sleep(time.Second * time.Duration(sleepTime))
+			} else if tokenTTL == 0 {
+				log.Info("Vault token TTL is 0. It is a root token or set to not expire.")
+				return
 			} else {
 				time.Sleep(time.Second * 60)
 			}

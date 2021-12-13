@@ -100,11 +100,67 @@ The `TTL` is optional and used to decrease the number of times the operator call
 
 The default encoding is `text` but you can change it to `base64` per secret reference. This way you can, for example, base64 encode large configuration files.
 
+# Advance config: password rotation
+
+If you're running a database you may want to keep the secrets in sync between your secrets store, Kubernetes and the database. This can be handy for password rotation to ensure the clients don't use the same password all the time. Please be aware your client *must* suppport re-reading the secret and reconnecting whenever it is updated.
+
+We don't yet support TLS, we'll add it to future releases.
+
+```yaml
+---
+apiVersion: digitalis.io/v1
+kind: ValsSecret
+metadata:
+  name: vals-secret-sample
+  labels:
+    owner: digitalis.io
+spec:
+  name: my-secret # Optional, default is the resource name
+  ttl: 10         # Optional, default is 0. The secret will be checked at every "reconcile period". See below.
+  type: Opaque    # Default type, others supported
+  data:
+    username:
+      ref: ref+gcpsecrets://databases/test#username
+      encoding: text
+    password:
+      ref: ref+gcpsecrets://databases/test#password
+      encoding: text
+  databases:
+    - driver: cassandra
+      loginCredentials:
+        secretName: cassandra-creds # secret containing the username and password to access the DB and run the below query
+        usernameKey: username       # in the secret, which key contains the username (default `cassandra`)
+        passwordKey: password       # in the secret, which key contains the password
+      port: 9042
+      query: "ALTER ROLE '{{.username}}' WITH PASSWORD = '{{.password}}';"
+      hosts:                        # list all your cassandra nodes here
+        - cassandra01
+        - cassandra02
+    - driver: postgres
+      loginCredentials:
+        secretName: postgres-creds
+        usernameKey: username
+        passwordKey: password
+      port: 5432
+      query: "ALTER USER {{.username}} WITH PASSWORD '{{.password}}';"
+      hosts:
+        - postgres
+    - driver: mysql
+      loginCredentials:
+        secretName: mysql-creds
+        namespace: mysql-server
+        passwordKey: mysql-root-password # if username is omitted it default to `mysql`
+      port: 3306
+      query: "ALTER USER '{{.username}}'@'localhost' IDENTIFIED BY '{{.password}}';"
+      hosts:
+        - mysql
+```
 # Options
 
 The following options are available. See the [helm chart documentation](charts/vals-operator/README.md) for more information on adding them to your deployment configuration.
 
 ```sh
+Usage of ./bin/vals-operator:
   -exclude-namespaces string
     	Comma separated list of namespaces to ignore.
   -health-probe-bind-address string
@@ -116,9 +172,11 @@ The following options are available. See the [helm chart documentation](charts/v
   -metrics-bind-address string
     	The address the metric endpoint binds to. (default ":8080")
   -reconcile-period duration
-    	How often the controller will re-queue secretdefinition events (default 5s)
+    	How often the controller will re-queue vals-operator events. (default 5s)
   -record-changes
-    	Records every time a secret has been updated. You can view them with kubectl describe (default true)
+    	Records every time a secret has been updated. You can view them with kubectl describe. It may also be disabled globally and enabled per secret via the annotation 'vals-operator.digitalis.io/record: "true"' (default true)
+  -ttl duration
+    	How often to check backend for updates. (default 5m0s)
   -watch-namespaces string
     	Comma separated list of namespaces that vals-operator will watch.
   -zap-devel

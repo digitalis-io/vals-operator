@@ -4,7 +4,10 @@ go 1.16
 
 require (
 	github.com/go-logr/logr v0.3.0
+	github.com/go-sql-driver/mysql v1.5.0
+	github.com/gocql/gocql v0.0.0-20211015133455-b225f9b53fa1
 	github.com/hashicorp/vault/api v1.0.4
+	github.com/lib/pq v1.2.0
 	github.com/mitchellh/mapstructure v1.4.2 // indirect
 	github.com/onsi/ginkgo v1.14.1
 	github.com/onsi/gomega v1.10.2
