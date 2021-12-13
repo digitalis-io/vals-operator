@@ -100,11 +100,11 @@ The `TTL` is optional and used to decrease the number of times the operator call
 
 The default encoding is `text` but you can change it to `base64` per secret reference. This way you can, for example, base64 encode large configuration files.
 
-# Advance config: password rotation
+## Advance config: password rotation
 
 If you're running a database you may want to keep the secrets in sync between your secrets store, Kubernetes and the database. This can be handy for password rotation to ensure the clients don't use the same password all the time. Please be aware your client *must* suppport re-reading the secret and reconnecting whenever it is updated.
 
-We don't yet support TLS, we'll add it to future releases.
+_We don't yet support TLS, we'll add it to future releases._
 
 ```yaml
 ---
@@ -132,7 +132,8 @@ spec:
         usernameKey: username       # in the secret, which key contains the username (default `cassandra`)
         passwordKey: password       # in the secret, which key contains the password
       port: 9042
-      query: "ALTER ROLE '{{.username}}' WITH PASSWORD = '{{.password}}';"
+      usernameKey: username
+      passwordKey: password
       hosts:                        # list all your cassandra nodes here
         - cassandra01
         - cassandra02
@@ -142,20 +143,24 @@ spec:
         usernameKey: username
         passwordKey: password
       port: 5432
-      query: "ALTER USER {{.username}} WITH PASSWORD '{{.password}}';"
+      usernameKey: username
+      passwordKey: password
       hosts:
         - postgres
     - driver: mysql
       loginCredentials:
         secretName: mysql-creds
         namespace: mysql-server
-        passwordKey: mysql-root-password # if username is omitted it default to `mysql`
+        passwordKey: mysql-root-password # if username is omitted it defaults to `mysql`
       port: 3306
-      query: "ALTER USER '{{.username}}'@'localhost' IDENTIFIED BY '{{.password}}';"
+      usernameKey: username
+      passwordKey: password
+      userHost: "%"                     # default
       hosts:
         - mysql
 ```
-# Options
+
+## Options
 
 The following options are available. See the [helm chart documentation](charts/vals-operator/README.md) for more information on adding them to your deployment configuration.
 
