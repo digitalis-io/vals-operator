@@ -3,6 +3,7 @@ package postgres
 import (
 	"database/sql"
 	"fmt"
+	"os"
 
 	"github.com/lib/pq"
 
@@ -10,9 +11,18 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
+func getEnv(key, fallback string) string {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		value = fallback
+	}
+	return value
+}
+
 func runPostgresQuery(dbQuery dbType.DatabaseQuery, host string) error {
-	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s connect_timeout=5 sslmode=disable",
-		host, dbQuery.Port, dbQuery.LoginUsername, dbQuery.LoginPassword, "postgres")
+	sslmode := getEnv("PGSSLMODE", "disable")
+	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres connect_timeout=10 sslmode=%s",
+		host, dbQuery.Port, dbQuery.LoginUsername, dbQuery.LoginPassword, sslmode)
 
 	db, err := sql.Open("postgres", psqlconn)
 	if err != nil {

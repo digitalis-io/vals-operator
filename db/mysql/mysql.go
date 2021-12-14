@@ -16,7 +16,7 @@ func quoteLiteralMysql(literal string) string {
 }
 
 func runMysqlQuery(dbQuery dbType.DatabaseQuery, host string) error {
-	mysqlconn := fmt.Sprintf("%s:%s@tcp(%s:%d)/mysql",
+	mysqlconn := fmt.Sprintf("%s:%s@tcp(%s:%d)/mysql?tls=preferred",
 		dbQuery.LoginUsername, dbQuery.LoginPassword, host, dbQuery.Port)
 
 	db, err := sql.Open("mysql", mysqlconn)
