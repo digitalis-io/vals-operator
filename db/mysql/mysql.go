@@ -30,7 +30,7 @@ func runMysqlQuery(dbQuery dbType.DatabaseBackend, host string) error {
 		dbQuery.UserHost = "%"
 	}
 
-	_, err = db.Exec(fmt.Sprintf("ALTER USER '%s'@'%s' IDENTIFIED BY %s",
+	_, err = db.Exec(fmt.Sprintf("ALTER USER %s@%s IDENTIFIED BY %s",
 		quoteLiteralMysql(dbQuery.Username),
 		quoteLiteralMysql(dbQuery.UserHost),
 		quoteLiteralMysql(dbQuery.Password)))
