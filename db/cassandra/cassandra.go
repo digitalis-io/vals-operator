@@ -20,7 +20,8 @@ func quoteLiteral(literal string) string {
 	return "'" + strings.Replace(literal, `'`, `''`, -1) + "'"
 }
 
-func UpdateUserPassword(dbQuery dbType.DatabaseQuery) error {
+// UpdateUserPassword updates the user's password
+func UpdateUserPassword(dbQuery dbType.DatabaseBackend) error {
 	var log logr.Logger
 
 	log = ctrl.Log.WithName("cassandra")

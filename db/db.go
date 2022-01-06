@@ -7,7 +7,8 @@ import (
 	dbType "digitalis.io/vals-operator/db/types"
 )
 
-func UpdateUserPassword(dbQuery dbType.DatabaseQuery) error {
+// UpdateUserPassword triggers a password update on supported backends
+func UpdateUserPassword(dbQuery dbType.DatabaseBackend) error {
 	switch dbQuery.Driver {
 	case "cassandra":
 		return cassandra.UpdateUserPassword(dbQuery)

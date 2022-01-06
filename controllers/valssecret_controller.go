@@ -79,6 +79,7 @@ func (r *ValsSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
+// Reconcile is the main function
 func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var secret secretv1.ValsSecret
 
@@ -315,7 +316,7 @@ func (r *ValsSecretReconciler) updateDatabases(sDef *secretv1.ValsSecret, secret
 				return
 			}
 
-			dbQuery := dbType.DatabaseQuery{
+			dbQuery := dbType.DatabaseBackend{
 				Username:      username,
 				Password:      password,
 				UserHost:      string(dbSecret.Data[sDef.Spec.Databases[db].UserHost]),
@@ -391,8 +392,8 @@ func (r *ValsSecretReconciler) getKeyFromK8sSecret(secretRef string) (string, er
 
 func (r *ValsSecretReconciler) hasSecretExpired(sDef secretv1.ValsSecret, secret *corev1.Secret) bool {
 	/* if no TTL, apply a sensible default */
-	if sDef.Spec.Ttl <= 0 {
-		sDef.Spec.Ttl = int64(r.DefaultTTL.Seconds())
+	if sDef.Spec.TTL <= 0 {
+		sDef.Spec.TTL = int64(r.DefaultTTL.Seconds())
 	}
 
 	lastUpdated := secret.GetAnnotations()[lastUpdatedAnnotation]
@@ -406,7 +407,7 @@ func (r *ValsSecretReconciler) hasSecretExpired(sDef secretv1.ValsSecret, secret
 		return true
 	}
 
-	if int64(now.Sub(s).Seconds()) > sDef.Spec.Ttl {
+	if int64(now.Sub(s).Seconds()) > sDef.Spec.TTL {
 		return true
 	}
 

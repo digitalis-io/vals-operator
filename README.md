@@ -56,7 +56,7 @@ helm upgrade --install vals-operator --create-namespace -n vals-operator \
 
 ## HashiCorp Vault Authentication
 
-If you're using Vault as backend you can also enable the Kubernetes Auth login method. Refer to the [HashiCorp documentation](https://www.vaultproject.io/docs/auth/kubernetes) on creating a role. 
+If you're using Vault as backend you can also enable the Kubernetes Auth login method. Refer to the [HashiCorp documentation](https://www.vaultproject.io/docs/auth/kubernetes) on creating a role.
 
 You will need to add two additional environment variables to the `vals-operator` installation:
 
@@ -96,7 +96,7 @@ spec:
 
 The example above will create a secret named `my-secret` and get the values from the different sources. The secret will be kept in sync against the backed secrets store.
 
-The `TTL` is optional and used to decrease the number of times the operator calls the backend secrets store as some of them such as [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/pricing/) will incur a cost. 
+The `TTL` is optional and used to decrease the number of times the operator calls the backend secrets store as some of them such as [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/pricing/) will incur a cost.
 
 The default encoding is `text` but you can change it to `base64` per secret reference. This way you can, for example, base64 encode large configuration files.
 
