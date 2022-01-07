@@ -16,7 +16,7 @@ import (
 
 const (
 	kubernetesJwtTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-	kubernetesAuthUrl      = "auth/kubernetes/login"
+	kubernetesAuthURL      = "auth/kubernetes/login"
 )
 
 var log logr.Logger
@@ -35,11 +35,11 @@ func fileExists(name string) (bool, error) {
 func vaultClient() (*api.Client, error) {
 	var vaultSkipVerify bool = false
 
-	vaultUrl := os.Getenv("VAULT_ADDR")
+	vaultURL := os.Getenv("VAULT_ADDR")
 	if os.Getenv("VAULT_SKIP_VERIFY") != "" && os.Getenv("VAULT_SKIP_VERIFY") == "true" {
 		vaultSkipVerify = true
 	}
-	if vaultUrl == "" {
+	if vaultURL == "" {
 		return nil, fmt.Errorf("VAULT_ADDR is not set")
 	}
 
@@ -50,7 +50,7 @@ func vaultClient() (*api.Client, error) {
 	httpClient := &http.Client{Transport: tr}
 
 	// create a vault client
-	return api.NewClient(&api.Config{Address: vaultUrl, HttpClient: httpClient})
+	return api.NewClient(&api.Config{Address: vaultURL, HttpClient: httpClient})
 }
 
 func renewToken() (float64, error) {
@@ -120,14 +120,14 @@ func kubeLogin() error {
 		"role": os.Getenv("VAULT_ROLE_ID"),
 	}
 
-	var loginUrl string
+	var loginURL string
 	if os.Getenv("VAULT_KUBERNETES_PATH") == "" {
-		loginUrl = kubernetesAuthUrl
+		loginURL = kubernetesAuthURL
 	} else {
-		loginUrl = fmt.Sprintf("auth/%s/login", os.Getenv("VAULT_KUBERNETES_PATH"))
+		loginURL = fmt.Sprintf("auth/%s/login", os.Getenv("VAULT_KUBERNETES_PATH"))
 	}
 
-	r, err := client.Logical().Write(loginUrl, params)
+	r, err := client.Logical().Write(loginURL, params)
 	if err != nil {
 		return err
 	}
@@ -142,6 +142,7 @@ func kubeLogin() error {
 	return nil
 }
 
+// Start background process to check vault tokens
 func Start() error {
 	log = ctrl.Log.WithName("vault")
 

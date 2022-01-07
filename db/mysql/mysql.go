@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	// Import mysql library
 	_ "github.com/go-sql-driver/mysql"
 
 	dbType "digitalis.io/vals-operator/db/types"
@@ -15,7 +16,7 @@ func quoteLiteralMysql(literal string) string {
 	return "'" + strings.Replace(strings.Replace(literal, "'", "''", -1), "\\", "\\\\", -1) + "'"
 }
 
-func runMysqlQuery(dbQuery dbType.DatabaseQuery, host string) error {
+func runMysqlQuery(dbQuery dbType.DatabaseBackend, host string) error {
 	mysqlconn := fmt.Sprintf("%s:%s@tcp(%s:%d)/mysql?tls=preferred",
 		dbQuery.LoginUsername, dbQuery.LoginPassword, host, dbQuery.Port)
 
@@ -45,7 +46,8 @@ func runMysqlQuery(dbQuery dbType.DatabaseQuery, host string) error {
 	return nil
 }
 
-func UpdateUserPassword(dbQuery dbType.DatabaseQuery) error {
+// UpdateUserPassword updates the user's password
+func UpdateUserPassword(dbQuery dbType.DatabaseBackend) error {
 	log := ctrl.Log.WithName("mysql")
 
 	/* Default user */

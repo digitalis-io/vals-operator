@@ -1,6 +1,7 @@
 package types
 
-type DatabaseQuery struct {
+// DatabaseBackend object for database queries
+type DatabaseBackend struct {
 	Username      string
 	Password      string
 	UserHost      string

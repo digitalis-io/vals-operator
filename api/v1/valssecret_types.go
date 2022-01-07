@@ -23,6 +23,7 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// DataSource defines a secret
 type DataSource struct {
 	// Ref value to the secret in the format ref+backend://path
 	// https://github.com/variantdev/vals
@@ -31,6 +32,7 @@ type DataSource struct {
 	Encoding string `json:"encoding,omitempty"`
 }
 
+// DatabaseLoginCredentials holds the access details for the DB
 type DatabaseLoginCredentials struct {
 	// Name of the secret containing the credentials to be able to log in to the database
 	SecretName string `json:"secretName"`
@@ -42,6 +44,7 @@ type DatabaseLoginCredentials struct {
 	PasswordKey string `json:"passwordKey"`
 }
 
+// Database defines a DB connection
 type Database struct {
 	// Defines the database type
 	Driver string `json:"driver"`
@@ -63,7 +66,7 @@ type Database struct {
 type ValsSecretSpec struct {
 	Name      string                `json:"name,omitempty"`
 	Data      map[string]DataSource `json:"data"`
-	Ttl       int64                 `json:"ttl,omitempty"`
+	TTL       int64                 `json:"ttl,omitempty"`
 	Type      string                `json:"type,omitempty"`
 	Databases []Database            `json:"databases,omitempty"`
 }

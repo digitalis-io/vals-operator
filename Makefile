@@ -57,6 +57,9 @@ test: manifests generate fmt vet ## Run tests.
 
 ##@ Build
 
+pre-commit:
+	pre-commit run --all-files
+
 build: generate fmt vet ## Build manager binary.
 	go build -o bin/vals-operator main.go
 
@@ -95,7 +98,7 @@ kustomize: ## Download kustomize locally if necessary.
 
 release: docker-build ## Create a new release
 	cp config/crd/bases/digitalis.io_valssecrets.yaml charts/vals-operator/crds/valssecrets.yaml
-	
+
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))

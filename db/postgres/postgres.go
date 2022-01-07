@@ -19,7 +19,7 @@ func getEnv(key, fallback string) string {
 	return value
 }
 
-func runPostgresQuery(dbQuery dbType.DatabaseQuery, host string) error {
+func runPostgresQuery(dbQuery dbType.DatabaseBackend, host string) error {
 	sslmode := getEnv("PGSSLMODE", "disable")
 	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres connect_timeout=10 sslmode=%s",
 		host, dbQuery.Port, dbQuery.LoginUsername, dbQuery.LoginPassword, sslmode)
@@ -39,7 +39,8 @@ func runPostgresQuery(dbQuery dbType.DatabaseQuery, host string) error {
 	return nil
 }
 
-func UpdateUserPassword(dbQuery dbType.DatabaseQuery) error {
+// UpdateUserPassword updates the user's password
+func UpdateUserPassword(dbQuery dbType.DatabaseBackend) error {
 	log := ctrl.Log.WithName("postgres")
 
 	/* Default user */
