@@ -16,7 +16,7 @@ jobs:
       - name: Install Dependencies apt
         run: |
           apt update && \
-          apt-get install -y python3 python3-pip python3-setuptools git wget golint
+          apt-get install -y python3 python3-pip python3-setuptools git wget
 
       - uses: actions/checkout@v2
 
