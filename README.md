@@ -8,7 +8,7 @@ Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/vari
 
 You can watch this brief video on how it works:
 
-[![IMAGE_ALT](https://img.youtube.com/vi/wLzkrKdSBT8/hq3.jpg)](https://www.youtube.com/watch?eature=player_embedded&v=wLzkrKdSBT8)
+[![YouTube](./youtube-video.png)](https://www.youtube.com/watch?eature=player_embedded&v=wLzkrKdSBT8)
 
 ## Mirroring secrets
 
