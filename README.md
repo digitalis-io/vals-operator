@@ -8,11 +8,8 @@ Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/vari
 
 You can watch this brief video on how it works:
 
-<a href="https://www.youtube.com/watch?feature=player_embedded&v=wLzkrKdSBT8" target="_blank">
- <img src="https://img.youtube.com/vi/wLzkrKdSBT8/1.jpg" alt="Vals-Operator Demo" width="420" height="315" border="0" />
-</a>
+[![IMAGE_ALT](https://img.youtube.com/vi/wLzkrKdSBT8/hq3.jpg)](https://www.youtube.com/watch?eature=player_embedded&v=wLzkrKdSBT8)
 
-[![IMAGE_ALT](https://img.youtube.com/vi/wLzkrKdSBT8/1.jpg)](https://www.youtube.com/watch?eature=player_embedded&v=wLzkrKdSBT8)
 ## Mirroring secrets
 
 We have also added the ability to copy secrets between namespaces. It uses the format `ref+k8s://namespace/secret#key`. This way you can keep secrets generated in one namespace in sync with any other namespace in the cluster.
