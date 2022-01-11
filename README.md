@@ -8,9 +8,9 @@ Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/vari
 
 You can watch this brief video on how it works:
 
-<iframe width="420" height="315"
-src="https://www.youtube.com/embed/wLzkrKdSBT8">
-</iframe>
+<a href="https://www.youtube.com/watch?feature=player_embedded&v=wLzkrKdSBT8" target="_blank">
+ <img src="https://img.youtube.com/vi/wLzkrKdSBT8/1.jpg" alt="Vals-Operator Demo" width="240" height="180" border="0" />
+</a>
 
 ## Mirroring secrets
 
