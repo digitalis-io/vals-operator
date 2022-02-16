@@ -169,6 +169,18 @@ spec:
       userHost: "%"                     # default
       hosts:
         - mysql
+    - driver: elastic
+      loginCredentials:
+        secretName: elastic-creds
+        namespace: elastic-server
+        usernameKey: username           # the username defaults to 'elastic' if not provided
+        passwordKey: password
+      port: 9200
+      usernameKey: username
+      passwordKey: password
+      hosts:
+        - my-elastic                    # this would be converted to http://my-elastic:9200
+        - https://my-other-elastic:9200 # provide full URL instead
 ```
 
 ## Options

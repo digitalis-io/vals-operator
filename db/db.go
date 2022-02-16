@@ -2,6 +2,7 @@ package database
 
 import (
 	"digitalis.io/vals-operator/db/cassandra"
+	"digitalis.io/vals-operator/db/elastic"
 	"digitalis.io/vals-operator/db/mysql"
 	"digitalis.io/vals-operator/db/postgres"
 	dbType "digitalis.io/vals-operator/db/types"
@@ -16,6 +17,8 @@ func UpdateUserPassword(dbQuery dbType.DatabaseBackend) error {
 		return postgres.UpdateUserPassword(dbQuery)
 	case "mysql":
 		return mysql.UpdateUserPassword(dbQuery)
+	case "elastic":
+		return elastic.UpdateUserPassword(dbQuery)
 	}
 	return nil
 }
