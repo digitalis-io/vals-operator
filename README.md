@@ -72,7 +72,9 @@ If you're using Vault as backend you can also enable the Kubernetes Auth login m
 You will need to add two additional environment variables to the `vals-operator` installation:
 
 * VAULT_ROLE_ID: name of the Kubernetes Role you created granting access to read the secrets
-* VAULT_AUTH_METHOD: set it to `kubernetes`
+* VAULT_ADDR: URL to the Vault server, ie, http://vault:8200
+* VAULT_LOGIN_USER and VAULT_LOGIN_PASSWORD: to use `userpass` authentication (insecure, not recommended)
+* VAULT_APP_ROLE and VAULT_SECRET_ID: to use `approle` authentication
 
 # Usage
 

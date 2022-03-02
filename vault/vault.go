@@ -1,41 +1,40 @@
 package vault
 
 import (
+	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
-	"time"
+
+	"github.com/hashicorp/vault/api"
+	vault "github.com/hashicorp/vault/api"
+	vaultApprole "github.com/hashicorp/vault/api/auth/approle"
+	vaultKube "github.com/hashicorp/vault/api/auth/kubernetes"
+	vaultUserpass "github.com/hashicorp/vault/api/auth/userpass"
 
 	"github.com/go-logr/logr"
-	"github.com/hashicorp/vault/api"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const (
-	kubernetesJwtTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-	kubernetesAuthURL      = "auth/kubernetes/login"
+	kubernetesMountPath      	= "kubernetes"
+	approleMountPath 				= "approle"
+	userpassRoleMountPath 		= "userpass"
 )
-
 var log logr.Logger
+var vaultURL string = getEnv("VAULT_ADDR", "http://vault:8200")
 
-func fileExists(name string) (bool, error) {
-	_, err := os.Stat(name)
-	if err == nil {
-		return true, nil
+func getEnv(key string, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+			return value
 	}
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	return false, err
+	return fallback
 }
 
 func vaultClient() (*api.Client, error) {
 	var vaultSkipVerify bool = false
 
-	vaultURL := os.Getenv("VAULT_ADDR")
 	if os.Getenv("VAULT_SKIP_VERIFY") != "" && os.Getenv("VAULT_SKIP_VERIFY") == "true" {
 		vaultSkipVerify = true
 	}
@@ -53,128 +52,152 @@ func vaultClient() (*api.Client, error) {
 	return api.NewClient(&api.Config{Address: vaultURL, HttpClient: httpClient})
 }
 
-func renewToken() (float64, error) {
-	var tokenTTL float64
-	client, err := vaultClient()
-	if err != nil {
-		return -1, err
+func renewToken(client *vault.Client) {
+	// Default
+	login := loginKube
+	if getEnv("VAULT_LOGIN_USER", "") != "" && getEnv("VAULT_LOGIN_PASSWORD", "") != "" {
+		login = loginUserPass
+	} else if getEnv("VAULT_APP_ROLE", "") != "" && getEnv("VAULT_SECRET_ID", "") != "" {
+		login = loginAppRole
 	}
 
-	r, err := client.Logical().Read("auth/token/lookup-self")
-	if err != nil {
-		return -1, err
+	for {
+			vaultLoginResp, err := login(client)
+			if err != nil {
+					log.Error(err, "unable to authenticate to Vault")
+			}
+			err = os.Setenv("VAULT_TOKEN", vaultLoginResp.Auth.ClientToken)
+			if err != nil {
+				log.Error(err, "Cannot set VAULT_TOKEN env variable")
+				return
+			}
+
+			tokenErr := manageTokenLifecycle(client, vaultLoginResp)
+			if tokenErr != nil {
+					log.Error(err, "unable to start managing token lifecycle")
+			}
 	}
-
-	t, err := r.TokenTTL()
-	if err != nil {
-		return -1, err
-	}
-	tokenTTL = t.Seconds()
-
-	/* FIXME: is this a sensible minimum? */
-	if tokenTTL > 120 {
-		return tokenTTL, nil
-	}
-
-	if ok, err := r.TokenIsRenewable(); !ok {
-		return tokenTTL, err
-	}
-
-	r, err = client.Logical().Write("/auth/token/renew-self", map[string]interface{}{
-		"token": os.Getenv("VAULT_TOKEN"),
-	})
-	if err != nil {
-		return tokenTTL, err
-	}
-
-	tokenTTL = float64(r.Auth.LeaseDuration)
-	log.Info(fmt.Sprintf("Vault token renewed. New TTL is %v seconds", tokenTTL))
-
-	return tokenTTL, nil
 }
 
-func kubeLogin() error {
-	if ok, err := fileExists(kubernetesJwtTokenPath); !ok {
-		return err
+// Starts token lifecycle management. Returns only fatal errors as errors,
+// otherwise returns nil so we can attempt login again.
+func manageTokenLifecycle(client *vault.Client, token *vault.Secret) error {
+	renew := token.Auth.Renewable
+	if !renew {
+			log.Info("Token is not configured to be renewable. Re-attempting login.")
+			return nil
 	}
-	if os.Getenv("VAULT_ROLE_ID") == "" {
-		return fmt.Errorf("VAULT_ROLE_ID not defined")
-	}
-	client, err := vaultClient()
+
+	watcher, err := client.NewLifetimeWatcher(&vault.LifetimeWatcherInput{
+		Secret:    token,
+	})
 	if err != nil {
-		return err
+			return fmt.Errorf("unable to initialize new lifetime watcher for renewing auth token: %w", err)
 	}
-	fd, err := os.Open(kubernetesJwtTokenPath)
+
+	go watcher.Start()
+	defer watcher.Stop()
+
+	for {
+			select {
+			case err := <-watcher.DoneCh():
+					if err != nil {
+							log.Error(err, "Failed to renew token")
+							return nil
+					}
+					// This occurs once the token has reached max TTL.
+					log.Info("Token can no longer be renewed. Re-attempting login.")
+					return nil
+
+			// Successfully completed renewal
+			case renewal := <-watcher.RenewCh():
+					log.Info("Successfully renewed vault token")
+					err = os.Setenv("VAULT_TOKEN", renewal.Secret.Auth.ClientToken)
+					if err != nil {
+						return err
+					}
+			}
+	}
+}
+
+func loginKube(client *vault.Client) (*vault.Secret, error) {
+	roleId := getEnv("VAULT_ROLE_ID", "")
+	if roleId == "" {
+		return nil, fmt.Errorf("VAULT_ROLE_ID is not defined")
+	}
+
+	kubeAuth, err := vaultKube.NewKubernetesAuth(roleId,
+		vaultKube.WithMountPath(getEnv("VAULT_KUBERNETES_MOUNT_POINT", kubernetesMountPath)))
 	if err != nil {
-		return err
+			return nil, err
 	}
-	defer fd.Close()
-
-	jwt, err := ioutil.ReadAll(fd)
+	authInfo, err := client.Auth().Login(context.TODO(), kubeAuth)
 	if err != nil {
-		return err
+			return nil, fmt.Errorf("unable to login to kubernetes auth method: %w", err)
+	}
+	if authInfo == nil {
+			return nil, fmt.Errorf("no auth info was returned after login")
 	}
 
-	params := map[string]interface{}{
-		"jwt":  string(jwt),
-		"role": os.Getenv("VAULT_ROLE_ID"),
-	}
+	return authInfo, nil
+}
 
-	var loginURL string
-	if os.Getenv("VAULT_KUBERNETES_PATH") == "" {
-		loginURL = kubernetesAuthURL
-	} else {
-		loginURL = fmt.Sprintf("auth/%s/login", os.Getenv("VAULT_KUBERNETES_PATH"))
-	}
+func loginUserPass(client *vault.Client) (*vault.Secret, error) {
+	loginUser := getEnv("VAULT_LOGIN_USER", "")
 
-	r, err := client.Logical().Write(loginURL, params)
+	userpassAuth, err := vaultUserpass.NewUserpassAuth(loginUser,
+		&vaultUserpass.Password{FromEnv: "VAULT_LOGIN_PASSWORD"},
+		vaultUserpass.WithMountPath(getEnv("VAULT_USERPASS_MOUNT_PATH", userpassRoleMountPath)))
+
 	if err != nil {
-		return err
+			return nil, fmt.Errorf("unable to initialize userpass auth method: %w", err)
 	}
 
-	client.SetToken(r.Auth.ClientToken)
-
-	err = os.Setenv("VAULT_TOKEN", r.Auth.ClientToken)
+	authInfo, err := client.Auth().Login(context.TODO(), userpassAuth)
 	if err != nil {
-		return err
+			return nil, fmt.Errorf("unable to login to userpass auth method: %w", err)
+	}
+	if authInfo == nil {
+			return nil, fmt.Errorf("no auth info was returned after login")
 	}
 
-	return nil
+	return authInfo, nil
+}
+
+func loginAppRole(client *vault.Client) (*vault.Secret, error) {
+	roleId := getEnv("VAULT_APP_ROLE", "")
+
+	appRoleAuth, err := vaultApprole.NewAppRoleAuth(roleId,
+		&vaultApprole.SecretID{FromEnv: "VAULT_SECRET_ID"},
+		vaultApprole.WithMountPath(getEnv("VAULT_APPROLE_MOUNT_PATH", approleMountPath)))
+
+	if err != nil {
+			return nil, fmt.Errorf("unable to initialize approle auth method: %w", err)
+	}
+
+	authInfo, err := client.Auth().Login(context.TODO(), appRoleAuth)
+	if err != nil {
+			return nil, fmt.Errorf("unable to login to approle auth method: %w", err)
+	}
+	if authInfo == nil {
+			return nil, fmt.Errorf("no auth info was returned after login")
+	}
+
+	return authInfo, nil
 }
 
 // Start background process to check vault tokens
 func Start() error {
 	log = ctrl.Log.WithName("vault")
 
-	if os.Getenv("VAULT_AUTH_METHOD") == "kubernetes" {
-		err := kubeLogin()
-		if err != nil {
-			return err
-		}
+	client, err := vaultClient()
+	if err != nil {
+		log.Error(err, "Error setting up vault client")
+		return err
 	}
-	go func() {
-		for {
-			tokenTTL, err := renewToken()
-			if err != nil {
-				log.Error(err, "Error renewing vault token")
-				time.Sleep(time.Second * 60)
-				continue
-			}
 
-			/* Wait for near the time when token expires */
-			if tokenTTL > 0 {
-				var sleepTime float64 = tokenTTL
-				if tokenTTL > 120 {
-					sleepTime = sleepTime - 120
-				}
-				time.Sleep(time.Second * time.Duration(sleepTime))
-			} else if tokenTTL == 0 {
-				log.Info("Vault token TTL is 0. It is a root token or set to not expire.")
-				return
-			} else {
-				time.Sleep(time.Second * 60)
-			}
-		}
+	go func() {
+		renewToken(client)
 	}()
 
 	return nil

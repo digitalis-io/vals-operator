@@ -132,7 +132,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if os.Getenv("VAULT_TOKEN") != "" || os.Getenv("VAULT_AUTH_METHOD") != "" {
+	if os.Getenv("VAULT_AUTH_METHOD") != "" {
+		panic("Please remove the VAULT_AUTH_METHOD environment variable as it conflicts with `vals` backend engine")
+	}
+
+	if os.Getenv("VAULT_ADDR") != "" {
 		if err := vault.Start(); err != nil {
 			setupLog.Error(err, "unable authenticate with Vault")
 			os.Exit(1)

@@ -2,8 +2,6 @@ vals-operator
 =============
 This helm chart installs the Digitalis Vals Operator to manage sync secrets from supported backends into Kubernetes
 
-Current chart version is `0.3.0`
-
 
 ## Chart Values
 
