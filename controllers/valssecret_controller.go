@@ -154,6 +154,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			secretYaml[k] = v.Ref
 		}
 	}
+
 	valsRendered, err := vals.Eval(secretYaml, vals.Options{})
 	if err != nil {
 		r.Log.Error(err, "Failed to get secrets from secrets store", "name", secret.Name)
