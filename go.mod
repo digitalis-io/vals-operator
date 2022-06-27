@@ -11,7 +11,7 @@ require (
 	github.com/hashicorp/vault/api/auth/kubernetes v0.1.0
 	github.com/hashicorp/vault/api/auth/userpass v0.1.0
 	github.com/lib/pq v1.2.0
-	github.com/variantdev/vals v0.15.0
+	github.com/variantdev/vals v0.18.0
 	k8s.io/api v0.20.2
 	k8s.io/apimachinery v0.20.2
 	k8s.io/client-go v0.20.2
