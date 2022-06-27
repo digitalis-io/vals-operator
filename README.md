@@ -105,13 +105,15 @@ spec:
       ref: ref+awssecrets://kube/test#password
     ns-secret:
       ref: ref+k8s://namespace/secret#key
+    plain-text:
+      ref: literal_name # this is not processed by any secrets agent but is added to the secret as a literal string
 ```
 
 The example above will create a secret named `my-secret` and get the values from the different sources. The secret will be kept in sync against the backed secrets store.
 
 The `TTL` is optional and used to decrease the number of times the operator calls the backend secrets store as some of them such as [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/pricing/) will incur a cost.
 
-The default encoding is `text` but you can change it to `base64` per secret reference. This way you can, for example, base64 encode large configuration files.
+The default encoding is `text` but you can change it to `base64` per secret reference. This way you can, for example, base64 encode large configuration files. If you omit the `ref+` prefix `vals-operator` will not process the string and it will be added to the secret as as literal string.
 
 ## Advance config: password rotation
 
