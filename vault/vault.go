@@ -66,6 +66,7 @@ func tokenRenewer(client *vault.Client) {
 		vaultLoginResp, err := login(client)
 		if err != nil {
 			log.Error(err, "unable to authenticate to Vault")
+			return
 		}
 		err = os.Setenv("VAULT_TOKEN", vaultLoginResp.Auth.ClientToken)
 		if err != nil {
@@ -76,6 +77,7 @@ func tokenRenewer(client *vault.Client) {
 		tokenErr := manageTokenLifecycle(client, vaultLoginResp)
 		if tokenErr != nil {
 			log.Error(err, "unable to start managing token lifecycle")
+			return
 		}
 	}
 }
