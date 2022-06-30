@@ -59,7 +59,7 @@ helm upgrade --install vals-operator --create-namespace -n vals-operator \
   digitalis/vals-operator
 ```
 
-> :information_source: Check out the documentation for further details and examples including EKS integration.
+> :information_source: Check out the [documentation](./docs/index.md) for further details and examples including EKS integration.
 
 ## Rancher
 
