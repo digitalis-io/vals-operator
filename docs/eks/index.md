@@ -2,8 +2,11 @@
 
 ## EKS Configuration
 
-This is out of scope for this documentation but please check out EKS documentation:
+To use this feature you must have an EKS cluster configured with OIDC identity provider.
+This is out of scope for this documentation but please check out AWS website for more
+information:
 
+https://aws.amazon.com/blogs/containers/introducing-oidc-identity-provider-authentication-amazon-eks/
 https://docs.aws.amazon.com/eks/latest/userguide/enable-iam-roles-for-service-accounts.html
 https://docs.aws.amazon.com/eks/latest/userguide/create-service-account-iam-policy-and-role.html
 https://docs.aws.amazon.com/eks/latest/userguide/specify-service-account-role.html
