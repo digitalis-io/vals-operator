@@ -3,6 +3,7 @@ module digitalis.io/vals-operator
 go 1.16
 
 require (
+	github.com/Masterminds/sprig/v3 v3.2.2
 	github.com/go-logr/logr v1.2.0
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gocql/gocql v0.0.0-20211015133455-b225f9b53fa1

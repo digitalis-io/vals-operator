@@ -1,5 +1,5 @@
 /*
-Copyright 2021 Digitalis.IO.
+Copyright 2022 Digitalis.IO.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,9 +17,11 @@ limitations under the License.
 package controllers
 
 import (
+	"bytes"
 	"context"
 	b64 "encoding/base64"
 	"fmt"
+	"html/template"
 	"math"
 	"math/rand"
 	"regexp"
@@ -40,6 +42,7 @@ import (
 	secretv1 "digitalis.io/vals-operator/api/v1"
 	valsDb "digitalis.io/vals-operator/db"
 	dbType "digitalis.io/vals-operator/db/types"
+	sprig "github.com/Masterminds/sprig/v3"
 )
 
 const (
@@ -167,6 +170,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	data := make(map[string][]byte)
+	dataStr := make(map[string]string)
 	for k, v := range valsRendered {
 		if secret.Spec.Data[k].Encoding == "base64" && !strings.HasPrefix(secret.Spec.Data[k].Ref, k8sSecretPrefix) {
 			sDec, err := b64.StdEncoding.DecodeString(v.(string))
@@ -179,10 +183,29 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 				return r.errorBackoff(&secret)
 			}
 			data[k] = sDec
+			dataStr[k] = string(sDec)
 		} else {
 			data[k] = []byte(v.(string))
+			dataStr[k] = v.(string)
 		}
 	}
+
+	/* Render any template given */
+	for k, v := range secret.Spec.Template {
+		b := bytes.NewBuffer(nil)
+		t, err := template.New(k).Funcs(sprig.FuncMap()).Parse(v)
+		if err != nil {
+			r.Log.Error(err, "Cannot parse template")
+			continue
+		}
+		if err := t.Execute(b, &dataStr); err != nil {
+			r.Log.Error(err, "Cannot render template")
+			continue
+		}
+
+		data[k] = b.Bytes()
+	}
+
 	err = r.upsertSecret(&secret, data)
 	if err != nil {
 		r.Log.Error(err, "Failed to create secret")

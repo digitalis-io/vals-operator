@@ -125,7 +125,8 @@ func manageTokenLifecycle(client *vault.Client, token *vault.Secret) error {
 
 func loginKube(client *vault.Client) (*vault.Secret, error) {
 	roleId := getEnv("VAULT_ROLE_ID", "")
-	if roleId == "" {
+	vaultToken := getEnv("VAULT_TOKEN", "")
+	if roleId == "" && vaultToken == "" {
 		return nil, fmt.Errorf("VAULT_ROLE_ID is not defined")
 	}
 
