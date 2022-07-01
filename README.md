@@ -116,7 +116,7 @@ spec:
       password: {{.password}}
       {{- if .url }}
       url: {{ .url | lower }}
-      {{ end }} 
+      {{ end }}
 ```
 
 The example above will create a secret named `my-secret` and get the values from the different sources. The secret will be kept in sync against the backed secrets store.
