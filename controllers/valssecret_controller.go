@@ -196,10 +196,18 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		t, err := template.New(k).Funcs(sprig.FuncMap()).Parse(v)
 		if err != nil {
 			r.Log.Error(err, "Cannot parse template")
+			if r.recordingEnabled(&secret) {
+				msg := fmt.Sprintf("Template could not be parsed: %v", err)
+				r.Recorder.Event(&secret, corev1.EventTypeNormal, "Failed", msg)
+			}
 			continue
 		}
 		if err := t.Execute(b, &dataStr); err != nil {
 			r.Log.Error(err, "Cannot render template")
+			if r.recordingEnabled(&secret) {
+				msg := fmt.Sprintf("Template could not be rendered: %v", err)
+				r.Recorder.Event(&secret, corev1.EventTypeNormal, "Failed", msg)
+			}
 			continue
 		}
 
