@@ -69,6 +69,7 @@ type ValsSecretSpec struct {
 	TTL       int64                 `json:"ttl,omitempty"`
 	Type      string                `json:"type,omitempty"`
 	Databases []Database            `json:"databases,omitempty"`
+	Template  map[string]string     `json:"template,omitempty"`
 }
 
 // ValsSecretStatus defines the observed state of ValsSecret
