@@ -74,14 +74,16 @@ type ValsSecretSpec struct {
 
 // ValsSecretStatus defines the observed state of ValsSecret
 type ValsSecretStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	LastUpdated string `json:"last_updated,omitempty"`
+	Synced      bool   `json:"synced,omitempty"`
 }
 
+// ValsSecret is the Schema for the valssecrets API
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
-
-// ValsSecret is the Schema for the valssecrets API
+//+kubebuilder:printcolumn:name="Namespace",type=string,JSONPath=`.metadata.namespace`
+//+kubebuilder:printcolumn:name="Synced",type=boolean,JSONPath=`.status.synced`
+//+kubebuilder:printcolumn:name="Last Updated",type=string,JSONPath=`.status.last_updated`
 type ValsSecret struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

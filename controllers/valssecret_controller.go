@@ -200,7 +200,10 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 				msg := fmt.Sprintf("Template could not be parsed: %v", err)
 				r.Recorder.Event(&secret, corev1.EventTypeNormal, "Failed", msg)
 			}
-			continue
+			if err = r.updateStatus(&secret, false); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, err
 		}
 		if err := t.Execute(b, &dataStr); err != nil {
 			r.Log.Error(err, "Cannot render template")
@@ -208,7 +211,10 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 				msg := fmt.Sprintf("Template could not be rendered: %v", err)
 				r.Recorder.Event(&secret, corev1.EventTypeNormal, "Failed", msg)
 			}
-			continue
+			if err = r.updateStatus(&secret, false); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, err
 		}
 
 		data[k] = b.Bytes()
@@ -217,7 +223,14 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	err = r.upsertSecret(&secret, data)
 	if err != nil {
 		r.Log.Error(err, "Failed to create secret")
+		if err = r.updateStatus(&secret, false); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, nil
+	}
+
+	if err = r.updateStatus(&secret, true); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	r.clearErrorCount(&secret)
@@ -495,4 +508,17 @@ func (r *ValsSecretReconciler) clearErrorCount(valsSecret *secretv1.ValsSecret) 
 		return
 	}
 	delete(r.errorCounts, errKey)
+}
+
+func (r *ValsSecretReconciler) updateStatus(secret *secretv1.ValsSecret, synced bool) error {
+	if synced {
+		secret.Status.LastUpdated = time.Now().UTC().Format("2006-01-02 15:04:05")
+	}
+	secret.Status.Synced = synced
+	err := r.Status().Update(context.Background(), secret)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
