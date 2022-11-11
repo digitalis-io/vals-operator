@@ -15,8 +15,8 @@ limitations under the License.
 */
 
 // Package v1 contains API Schema definitions for the secret v1 API group
-//+kubebuilder:object:generate=true
-//+groupName=digitalis.io
+// +kubebuilder:object:generate=true
+// +groupName=digitalis.io
 package v1
 
 import (
