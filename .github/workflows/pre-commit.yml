@@ -27,4 +27,4 @@ jobs:
       # Validate all files in the repo
       - name: Run pre-commit
         run: |
-          pre-commit run --all-files
+          pre-commit run --all-files -v || (cat /github/home/.cache/pre-commit/pre-commit.log && exit 1)
