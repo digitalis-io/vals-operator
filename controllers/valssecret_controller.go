@@ -38,6 +38,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretv1 "digitalis.io/vals-operator/api/v1"
 	valsDb "digitalis.io/vals-operator/db"
@@ -76,9 +78,11 @@ type ValsSecretReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *ValsSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Recorder = mgr.GetEventRecorderFor("Secrets")
+	pred := predicate.GenerationChangedPredicate{}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretv1.ValsSecret{}).
+		Owns(&corev1.Secret{}).WithEventFilter(pred).
 		Complete(r)
 }
 
@@ -290,6 +294,9 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 	delete(secret.ObjectMeta.Annotations, corev1.LastAppliedConfigAnnotation)
 	secret.ResourceVersion = ""
 
+	if err = controllerutil.SetControllerReference(sDef, secret, r.Scheme()); err != nil {
+		return err
+	}
 	err = r.Create(r.Ctx, secret)
 	if errors.IsAlreadyExists(err) {
 		err = r.Update(r.Ctx, secret)
