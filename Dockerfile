@@ -10,7 +10,9 @@ COPY go.sum /workspace/go.sum
 RUN go mod download
 
 # Copy the go source
-COPY . /workspace
+COPY main.go main.go
+COPY apis/ apis/
+COPY controllers/ controllers/
 
 # Build
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o vals-operator main.go

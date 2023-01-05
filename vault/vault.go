@@ -25,6 +25,7 @@ const (
 
 var log logr.Logger
 var vaultURL string = getEnv("VAULT_ADDR", "http://vault:8200")
+var client *vault.Client
 
 func getEnv(key string, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
@@ -56,6 +57,7 @@ func vaultClient() (*api.Client, error) {
 func tokenRenewer(client *vault.Client) {
 	// Default
 	login := loginKube
+
 	if getEnv("VAULT_LOGIN_USER", "") != "" && getEnv("VAULT_LOGIN_PASSWORD", "") != "" {
 		login = loginUserPass
 	} else if getEnv("VAULT_APP_ROLE", "") != "" && getEnv("VAULT_SECRET_ID", "") != "" {
@@ -126,6 +128,7 @@ func manageTokenLifecycle(client *vault.Client, token *vault.Secret) error {
 func loginKube(client *vault.Client) (*vault.Secret, error) {
 	roleId := getEnv("VAULT_ROLE_ID", "")
 	vaultToken := getEnv("VAULT_TOKEN", "")
+
 	if roleId == "" && vaultToken == "" {
 		return nil, fmt.Errorf("VAULT_ROLE_ID is not defined")
 	}
@@ -190,14 +193,64 @@ func loginAppRole(client *vault.Client) (*vault.Secret, error) {
 	return authInfo, nil
 }
 
+type VaultDbSecret struct {
+	LeaseId       string `json:"lease_id"`
+	LeaseDuration int    `json:"lease_duration"`
+	Username      string `json:"username"`
+	Password      string `json:"password"`
+}
+
+func RenewDbCredentials(s VaultDbSecret) (err error) {
+	if client == nil {
+		client, err = vaultClient()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func GetDbCredentials(role string, mount string) (VaultDbSecret, error) {
+	var dbSecret VaultDbSecret
+	var err error
+	if client == nil {
+		client, err = vaultClient()
+		if err != nil {
+			return dbSecret, err
+		}
+	}
+	path := fmt.Sprintf("%s/creds/%s", mount, role)
+	s, err := client.Logical().Read(path)
+	if err != nil {
+		return dbSecret, err
+	}
+
+	dbSecret = VaultDbSecret{
+		LeaseId:       s.LeaseID,
+		LeaseDuration: s.LeaseDuration,
+		Username:      s.Data["username"].(string),
+		Password:      s.Data["password"].(string),
+	}
+
+	return dbSecret, nil
+}
+
 // Start background process to check vault tokens
 func Start() error {
+	var err error
 	log = ctrl.Log.WithName("vault")
 
-	client, err := vaultClient()
+	client, err = vaultClient()
 	if err != nil {
 		log.Error(err, "Error setting up vault client")
 		return err
+	}
+
+	// FIXME: we don't currently handle renewals when auth is token only
+	vaultToken := getEnv("VAULT_TOKEN", "")
+	if vaultToken != "" {
+		return nil
 	}
 
 	go tokenRenewer(client)

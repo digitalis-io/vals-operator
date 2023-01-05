@@ -35,7 +35,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	secretv1 "digitalis.io/vals-operator/api/v1"
+	digitalisiov1beta1 "digitalis.io/vals-operator/apis/digitalis.io/v1beta1"
 	"digitalis.io/vals-operator/controllers"
+	digitalisiocontrollers "digitalis.io/vals-operator/controllers/digitalis.io"
 	"digitalis.io/vals-operator/vault"
 	//+kubebuilder:scaffold:imports
 )
@@ -49,6 +51,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(secretv1.AddToScheme(scheme))
+	utilruntime.Must(digitalisiov1beta1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -119,6 +122,20 @@ func main() {
 		Log:                  ctrl.Log.WithName("controllers").WithName("vals-operator"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ValsSecret")
+		os.Exit(1)
+	}
+	if err = (&digitalisiocontrollers.DbSecretReconciler{
+		Scheme:               scheme,
+		Client:               mgr.GetClient(),
+		APIReader:            mgr.GetAPIReader(),
+		Ctx:                  ctx,
+		ReconciliationPeriod: reconcilePeriod,
+		ExcludeNamespaces:    excludeNs,
+		RecordChanges:        recordChanges,
+		DefaultTTL:           defaultTTL,
+		Log:                  ctrl.Log.WithName("controllers").WithName("vals-operator"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "DbSecret")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
