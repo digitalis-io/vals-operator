@@ -346,7 +346,8 @@ func (r *DbSecretReconciler) rollout(sDef *digitalisiov1beta1.DbSecret) error {
 		var object v1.Deployment
 		err = r.Get(r.Ctx, clientObject, &object)
 		if errors.IsNotFound(err) {
-			r.Log.Error(err, fmt.Sprint("%s/%s in namespace %s not found", sDef.Spec.Rollout.Kind, sDef.Spec.Rollout.Name, sDef.Namespace))
+			msg := fmt.Sprintf("%s/%s in namespace %s not found", sDef.Spec.Rollout.Kind, sDef.Spec.Rollout.Name, sDef.Namespace)
+			r.Log.Error(err, msg)
 			return nil
 		}
 		if err != nil {
@@ -362,7 +363,7 @@ func (r *DbSecretReconciler) rollout(sDef *digitalisiov1beta1.DbSecret) error {
 		var object v1.StatefulSet
 		err = r.Get(r.Ctx, clientObject, &object)
 		if errors.IsNotFound(err) {
-			r.Log.Error(err, fmt.Sprint("%s/%s in namespace %s not found", sDef.Spec.Rollout.Kind, sDef.Spec.Rollout.Name, sDef.Namespace))
+			r.Log.Error(err, fmt.Sprintf("%s/%s in namespace %s not found", sDef.Spec.Rollout.Kind, sDef.Spec.Rollout.Name, sDef.Namespace))
 			return nil
 		}
 		if err != nil {
