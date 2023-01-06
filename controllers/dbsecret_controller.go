@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package digitalisio
+package controllers
 
 import (
 	"context"
@@ -41,17 +41,6 @@ import (
 	"digitalis.io/vals-operator/utils"
 	"digitalis.io/vals-operator/vault"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-
-const (
-	managedByLabel             = "app.kubernetes.io/managed-by"
-	lastUpdatedAnnotation      = "vals-operator.digitalis.io/last-updated"
-	timeLayout                 = "2006-01-02T15.04.05Z"
-	leaseIdLabel               = "vals-operator.digitalis.io/lease-id"
-	leaseDurationLabel         = "vals-operator.digitalis.io/lease-duration"
-	expiresOnLabel             = "vals-operator.digitalis.io/expires-on"
-	recordingEnabledAnnotation = "vals-operator.digitalis.io/record"
-	restartedAnnotation        = "vals-operator.digitalis.io/restartedAt"
 )
 
 // DbSecretReconciler reconciles a DbSecret object

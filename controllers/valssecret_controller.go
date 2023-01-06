@@ -41,18 +41,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	secretv1 "digitalis.io/vals-operator/api/v1"
+	secretv1 "digitalis.io/vals-operator/apis/digitalis.io/v1"
 	valsDb "digitalis.io/vals-operator/db"
 	dbType "digitalis.io/vals-operator/db/types"
+	"digitalis.io/vals-operator/utils"
 	sprig "github.com/Masterminds/sprig/v3"
-)
-
-const (
-	timeLayout                 = "2006-01-02T15.04.05Z"
-	lastUpdatedAnnotation      = "vals-operator.digitalis.io/last-updated"
-	recordingEnabledAnnotation = "vals-operator.digitalis.io/record"
-	managedByLabel             = "app.kubernetes.io/managed-by"
-	k8sSecretPrefix            = "ref+k8s://"
 )
 
 // ValsSecretReconciler reconciles a ValsSecret object
@@ -102,7 +95,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	//! [finalizer]
 	valsSecretFinalizerName := "vals.digitalis.io/finalizer"
 	if secret.ObjectMeta.DeletionTimestamp.IsZero() {
-		if !containsString(secret.GetFinalizers(), valsSecretFinalizerName) {
+		if !utils.ContainsString(secret.GetFinalizers(), valsSecretFinalizerName) {
 			secret.SetFinalizers(append(secret.GetFinalizers(), valsSecretFinalizerName))
 			if err := r.Update(context.Background(), &secret); err != nil {
 				return ctrl.Result{}, err
@@ -111,7 +104,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	} else {
 		// The object is being deleted
 		r.clearErrorCount(&secret)
-		if containsString(secret.GetFinalizers(), valsSecretFinalizerName) {
+		if utils.ContainsString(secret.GetFinalizers(), valsSecretFinalizerName) {
 			// our finalizer is present, so lets handle any external dependency
 			if err := r.deleteSecret(ctx, &secret); err != nil {
 				r.Log.Error(err, "Error deleting from Vals-Secret")
@@ -119,7 +112,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			}
 
 			// remove our finalizer from the list and update it.
-			secret.SetFinalizers(removeString(secret.GetFinalizers(), valsSecretFinalizerName))
+			secret.SetFinalizers(utils.RemoveString(secret.GetFinalizers(), valsSecretFinalizerName))
 			if err := r.Update(context.Background(), &secret); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -287,9 +280,9 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 		secret.ObjectMeta.Annotations = make(map[string]string)
 	}
 	// Replace all labels and annotations on the secret
-	mergeMap(secret.ObjectMeta.Labels, sDef.ObjectMeta.Labels)
+	utils.MergeMap(secret.ObjectMeta.Labels, sDef.ObjectMeta.Labels)
 	secret.ObjectMeta.Labels[managedByLabel] = "vals-operator"
-	mergeMap(secret.ObjectMeta.Annotations, sDef.ObjectMeta.Annotations)
+	utils.MergeMap(secret.ObjectMeta.Annotations, sDef.ObjectMeta.Annotations)
 	secret.ObjectMeta.Annotations[lastUpdatedAnnotation] = time.Now().UTC().Format(timeLayout)
 	delete(secret.ObjectMeta.Annotations, corev1.LastAppliedConfigAnnotation)
 	secret.ResourceVersion = ""
@@ -378,12 +371,12 @@ func (r *ValsSecretReconciler) updateDatabases(sDef *secretv1.ValsSecret, secret
 // secretNeedsUpdate Checks if the secret data or definition has changed from the current secret
 func (r *ValsSecretReconciler) secretNeedsUpdate(sDef *secretv1.ValsSecret, secret *corev1.Secret, newData map[string][]byte) bool {
 	return secret == nil || secret.Name == "" ||
-		!byteMapsMatch(secret.Data, newData) ||
-		!stringMapsMatch(
+		!utils.ByteMapsMatch(secret.Data, newData) ||
+		!utils.StringMapsMatch(
 			secret.ObjectMeta.Annotations,
 			sDef.ObjectMeta.Annotations,
 			[]string{"kubectl.kubernetes.io/last-applied-configuration", "vals-operator.digitalis.io/last-updated"}) ||
-		!stringMapsMatch(
+		!utils.StringMapsMatch(
 			secret.ObjectMeta.Labels,
 			sDef.ObjectMeta.Labels,
 			[]string{"app.kubernetes.io/managed-by"})
@@ -417,9 +410,9 @@ func (r *ValsSecretReconciler) deleteSecret(ctx context.Context, sDef *secretv1.
 
 func (r *ValsSecretReconciler) getKeyFromK8sSecret(secretRef string) (string, error) {
 	re := regexp.MustCompile(`ref\+k8s://(?P<namespace>\S+)/(?P<secretName>\S+)#(?P<key>\S+)`)
-	matchMap := findAllGroups(re, secretRef)
+	matchMap := utils.FindAllGroups(re, secretRef)
 
-	if !k8sSecretFound(matchMap) {
+	if !utils.K8sSecretFound(matchMap) {
 		return "", fmt.Errorf("The ref+k8s secret '%s' did not match the regular expression for ref+k8s://namespace/secret-name#key", secretRef)
 	}
 	secret, err := r.getSecret(matchMap["secretName"], matchMap["namespace"])

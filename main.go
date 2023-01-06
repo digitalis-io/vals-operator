@@ -34,10 +34,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	secretv1 "digitalis.io/vals-operator/api/v1"
+	secretv1 "digitalis.io/vals-operator/apis/digitalis.io/v1"
 	digitalisiov1beta1 "digitalis.io/vals-operator/apis/digitalis.io/v1beta1"
 	"digitalis.io/vals-operator/controllers"
-	digitalisiocontrollers "digitalis.io/vals-operator/controllers/digitalis.io"
 	"digitalis.io/vals-operator/vault"
 	//+kubebuilder:scaffold:imports
 )
@@ -124,7 +123,7 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "ValsSecret")
 		os.Exit(1)
 	}
-	if err = (&digitalisiocontrollers.DbSecretReconciler{
+	if err = (&controllers.DbSecretReconciler{
 		Scheme:               scheme,
 		Client:               mgr.GetClient(),
 		APIReader:            mgr.GetAPIReader(),

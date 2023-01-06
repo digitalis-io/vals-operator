@@ -12,7 +12,7 @@ resources:
   domain: digitalis.io
   group: secret
   kind: ValsSecret
-  path: digitalis.io/vals-operator/api/v1
+  path: digitalis.io/vals-operator/apis/digitalis.io/v1
   version: v1
 - api:
     crdVersion: v1
