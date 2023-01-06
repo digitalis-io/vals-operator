@@ -1,6 +1,7 @@
 {{- if .Values.manageCrds -}}
-{{- range $path, $bytes := .Files.Glob "crds/*.yaml" }}
-{{ $.Files.Get $path }}
+{{ $.Files.Get "crds/valssecrets.yaml" }}
+{{- if .Values.enableDbSecrets -}}
 ---
+{{ $.Files.Get "crds/dbsecrets.yaml" }}
 {{- end }}
 {{- end }}

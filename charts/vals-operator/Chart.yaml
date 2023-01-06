@@ -1,3 +1,4 @@
+---
 apiVersion: v2
 name: vals-operator
 description: This helm chart installs the Digitalis Vals Operator to manage sync secrets from supported backends into Kubernetes
@@ -6,7 +7,7 @@ kubeVersion: ">= 1.19.0-0"
 type: application
 
 # Chart version
-version: 0.6.4-db
+version: 0.6.4-db2
 # Latest container tag
 appVersion: "db"
 
