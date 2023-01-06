@@ -10,12 +10,10 @@ COPY go.sum /workspace/go.sum
 RUN go mod download
 
 # Copy the go source
-COPY main.go main.go
-COPY apis/ apis/
-COPY controllers/ controllers/
+COPY . ./
 
 # Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o vals-operator main.go
+RUN GOOS=linux GOARCH=amd64 go build -a -o vals-operator main.go
 
 # Use distroless as minimal base image to package the vals-operator binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details

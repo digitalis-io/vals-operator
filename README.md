@@ -200,6 +200,28 @@ spec:
         - https://my-other-elastic:9200 # provide full URL instead
 ```
 
+## Vault database credentials
+
+A great feature in HashiCorp Vault is the generate [database credentials](https://developer.hashicorp.com/vault/docs/secrets/databases) dynamically. The missing part is you need these credentials in Kubernertes where your applications are. This is why we have added a new resource definition to do just that:
+
+```yaml
+apiVersion: digitalis.io/v1beta1
+kind: DbSecret
+metadata:
+  name: cassandra
+spec:
+  vault:
+    role: readonly
+    mount: cass000
+  secret: # optional: vault returns the values as `username` and `password` but you may need different variable names
+    username: "CASSANDRA_USERNAME"
+    password: "CASSANDRA_PASSWORD"
+    CASSANDRA_HOSTS: 127.0.0.1 # anything other than username and password are literals you can define
+  rollout: # optional: run a `rollout` to make the pods use new credentials
+    kind: Deployment
+    name: cassandra-client
+```
+
 ## Options
 
 The following options are available. See the [helm chart documentation](charts/vals-operator/README.md) for more information on adding them to your deployment configuration.

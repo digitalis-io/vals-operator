@@ -26,11 +26,11 @@ import (
 // DbSecretSpec defines the desired state of DbSecret
 type DbSecretSpec struct {
 	// Name can override the secret name, defaults to manifests.name
-	SecretName string          `json:"secretName,omitempty"`
-	Vault      DbVaultConfig   `json:"vault"`
-	Secret     DbKeys          `json:"secret,omitempty"`
-	Renew      bool            `json:"renew,omitempty"`
-	Rollout    DbRolloutTarget `json:"rollout,omitempty"`
+	SecretName string            `json:"secretName,omitempty"`
+	Vault      DbVaultConfig     `json:"vault"`
+	Secret     map[string]string `json:"secret,omitempty"`
+	Renew      bool              `json:"renew,omitempty"`
+	Rollout    DbRolloutTarget   `json:"rollout,omitempty"`
 }
 
 /*
@@ -47,17 +47,13 @@ spec:
   secret: # optional: vault returns the values as `username` and `password` but you may need different variable names
     username: "CASSANDRA_USERNAME"
     password: "CASSANDRA_PASSWORD"
+	host: localhost
+	dc: europe
   rollout: # optional: run a `rollout` to make the pods use new credentials
     kind: Deployment
     name: my-cass-client
 */
 
-type DbKeys struct {
-	// Username is the key name for `username`
-	Username string `json:"username"`
-	// Password is the key name for `password`
-	Password string `json:"password"`
-}
 type DbRolloutTarget struct {
 	// Kind is either Deployment, Pod or StatefulSet
 	Kind string `json:"kind"`

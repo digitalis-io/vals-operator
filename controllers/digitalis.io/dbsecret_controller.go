@@ -25,9 +25,11 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -49,6 +51,7 @@ const (
 	leaseDurationLabel         = "vals-operator.digitalis.io/lease-duration"
 	expiresOnLabel             = "vals-operator.digitalis.io/expires-on"
 	recordingEnabledAnnotation = "vals-operator.digitalis.io/record"
+	restartedAnnotation        = "vals-operator.digitalis.io/restartedAt"
 )
 
 // DbSecretReconciler reconciles a DbSecret object
@@ -142,7 +145,7 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	if currentSecret != nil && currentSecret.Name != "" {
 		shouldUpdate := false
-		e, err := strconv.ParseInt(currentSecret.Labels[expiresOnLabel], 10, 64)
+		e, err := strconv.ParseInt(currentSecret.Annotations[expiresOnLabel], 10, 64)
 		if err != nil {
 			r.Log.Info(fmt.Sprintf("Updating secret %s", currentSecret.Name))
 			shouldUpdate = true
@@ -150,7 +153,7 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			margin := int64(120) // if expires in less then 2 min, we'll update it
 			if time.Now().Unix() >= e || time.Now().Unix() >= e+margin {
 				shouldUpdate = true
-				r.Log.Info(fmt.Sprintf("Updating credentials %s expired on %s", currentSecret.Name, currentSecret.Labels[expiresOnLabel]))
+				r.Log.Info(fmt.Sprintf("Updating credentials %s expired on %s", currentSecret.Name, currentSecret.Annotations[expiresOnLabel]))
 			}
 		}
 		if !shouldUpdate {
@@ -168,6 +171,12 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		r.Log.Error(err, "Failed to create secret")
 		return ctrl.Result{}, nil
+	}
+	/* Patching resources to force a rollout if required */
+	if dbSecret.Spec.Rollout.Name != "" && dbSecret.Spec.Rollout.Kind != "" {
+		if err := r.rollout(&dbSecret); err != nil {
+			r.Log.Error(err, "Could not perform rollout")
+		}
 	}
 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
 }
@@ -188,16 +197,22 @@ func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, cre
 
 	usernameKey := "username"
 	passwordKey := "password"
-	if sDef.Spec.Secret.Username != "" {
-		usernameKey = sDef.Spec.Secret.Username
+	if sDef.Spec.Secret["username"] != "" {
+		usernameKey = sDef.Spec.Secret["username"]
 	}
-	if sDef.Spec.Secret.Password != "" {
-		passwordKey = sDef.Spec.Secret.Password
+	if sDef.Spec.Secret["password"] != "" {
+		passwordKey = sDef.Spec.Secret["password"]
 	}
 	// if I use StringData I can avoid base64encoding the data
 	data := make(map[string]string)
 	data[usernameKey] = creds.Username
 	data[passwordKey] = creds.Password
+	/* Any other values are literals to add to the secret */
+	for k, v := range sDef.Spec.Secret {
+		if k != "username" && k != "password" {
+			data[k] = v
+		}
+	}
 	secret.StringData = data
 	secret.Data = nil
 
@@ -215,11 +230,11 @@ func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, cre
 	}
 	utils.MergeMap(secret.ObjectMeta.Labels, sDef.ObjectMeta.Labels)
 	utils.MergeMap(secret.ObjectMeta.Annotations, sDef.ObjectMeta.Annotations)
-	secret.ObjectMeta.Labels[managedByLabel] = "vals-operator"
-	secret.ObjectMeta.Labels[leaseIdLabel] = strings.Split(creds.LeaseId, "/")[3]
-	secret.ObjectMeta.Labels[leaseDurationLabel] = fmt.Sprintf("%d", creds.LeaseDuration)
-	secret.ObjectMeta.Labels[lastUpdatedAnnotation] = time.Now().UTC().Format(timeLayout)
-	secret.ObjectMeta.Labels[expiresOnLabel] = fmt.Sprintf("%d", time.Now().Unix()+int64(creds.LeaseDuration))
+	secret.ObjectMeta.Annotations[managedByLabel] = "vals-operator"
+	//secret.ObjectMeta.Annotations[leaseIdLabel] = strings.Split(creds.LeaseId, "/")[3]
+	secret.ObjectMeta.Annotations[leaseDurationLabel] = fmt.Sprintf("%d", creds.LeaseDuration)
+	secret.ObjectMeta.Annotations[lastUpdatedAnnotation] = time.Now().UTC().Format(timeLayout)
+	secret.ObjectMeta.Annotations[expiresOnLabel] = fmt.Sprintf("%d", time.Now().Unix()+int64(creds.LeaseDuration))
 
 	if err = controllerutil.SetControllerReference(sDef, secret, r.Scheme); err != nil {
 		return err
@@ -315,4 +330,53 @@ func (r *DbSecretReconciler) recordingEnabled(sDef *digitalisiov1beta1.DbSecret)
 		return false
 	}
 	return r.RecordChanges
+}
+
+// rollout is used to restart the Deployment or StatefulSet
+func (r *DbSecretReconciler) rollout(sDef *digitalisiov1beta1.DbSecret) error {
+	var err error
+
+	clientObject := types.NamespacedName{
+		Namespace: sDef.Namespace,
+		Name:      sDef.Spec.Rollout.Name,
+	}
+	r.Log.Info(fmt.Sprintf("Rolling restart %s/%s in namespace %s", sDef.Spec.Rollout.Kind, sDef.Spec.Rollout.Name, sDef.Namespace))
+
+	if strings.ToLower(sDef.Spec.Rollout.Kind) == "deployment" {
+		var object v1.Deployment
+		err = r.Get(r.Ctx, clientObject, &object)
+		if errors.IsNotFound(err) {
+			r.Log.Error(err, fmt.Sprint("%s/%s in namespace %s not found", sDef.Spec.Rollout.Kind, sDef.Spec.Rollout.Name, sDef.Namespace))
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		object.Spec.Template.Annotations[restartedAnnotation] = time.Now().UTC().Format(timeLayout)
+		err = r.Update(r.Ctx, &object)
+		if err != nil {
+			return err
+		}
+	} else if strings.ToLower(sDef.Spec.Rollout.Kind) == "statefulset" {
+		var object v1.StatefulSet
+		err = r.Get(r.Ctx, clientObject, &object)
+		if errors.IsNotFound(err) {
+			r.Log.Error(err, fmt.Sprint("%s/%s in namespace %s not found", sDef.Spec.Rollout.Kind, sDef.Spec.Rollout.Name, sDef.Namespace))
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		object.Spec.Template.Annotations[restartedAnnotation] = time.Now().UTC().Format(timeLayout)
+		err = r.Update(r.Ctx, &object)
+		if err != nil {
+			return err
+		}
+	} else {
+		return fmt.Errorf("%s kind is not supported", sDef.Spec.Rollout.Kind)
+	}
+
+	return nil
 }
