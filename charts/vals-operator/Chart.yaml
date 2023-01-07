@@ -9,7 +9,7 @@ type: application
 # Chart version
 version: 0.6.4-db2
 # Latest container tag
-appVersion: "db"
+appVersion: "0.6.4-db2"
 
 maintainers:
 - email: info@digitalis.io
