@@ -30,7 +30,7 @@ type DbSecretSpec struct {
 	Vault      DbVaultConfig     `json:"vault"`
 	Secret     map[string]string `json:"secret,omitempty"`
 	Renew      bool              `json:"renew,omitempty"`
-	Rollout    DbRolloutTarget   `json:"rollout,omitempty"`
+	Rollout    []DbRolloutTarget `json:"rollout,omitempty"`
 }
 
 /*
@@ -50,8 +50,8 @@ spec:
 	host: localhost
 	dc: europe
   rollout: # optional: run a `rollout` to make the pods use new credentials
-    kind: Deployment
-    name: my-cass-client
+    - kind: Deployment
+      name: my-cass-client
 */
 
 type DbRolloutTarget struct {
