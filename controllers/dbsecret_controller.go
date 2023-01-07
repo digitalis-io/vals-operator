@@ -103,7 +103,7 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if utils.ContainsString(dbSecret.GetFinalizers(), valsDbSecretFinalizerName) {
 			// our finalizer is present, so lets handle any external dependency
 			if err := r.deleteSecret(ctx, &dbSecret); err != nil {
-				r.Log.Error(err, "Error deleting from Vals-Secret")
+				r.Log.Error(err, "Error deleting from Vals-Secret", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
 				return ctrl.Result{}, client.IgnoreNotFound(err)
 			}
 
@@ -115,17 +115,12 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 
 		// Stop reconciliation as the item is being deleted
-		r.Log.Info(fmt.Sprintf("Secret %s deleted", dbSecret.Name))
+		r.Log.Info("Secret deleted", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
 		return ctrl.Result{}, nil
 	}
 	//! [finalizer]
 
-	var secretName string
-	if dbSecret.Spec.SecretName != "" {
-		secretName = dbSecret.Spec.SecretName
-	} else {
-		secretName = dbSecret.Name
-	}
+	secretName := r.getSecretName(&dbSecret)
 
 	currentSecret, err := r.getSecret(secretName, dbSecret.GetNamespace())
 	if client.IgnoreNotFound(err) != nil {
@@ -136,13 +131,13 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		shouldUpdate := false
 		e, err := strconv.ParseInt(currentSecret.Annotations[expiresOnLabel], 10, 64)
 		if err != nil {
-			r.Log.Info(fmt.Sprintf("Updating secret %s", currentSecret.Name))
+			r.Log.Info("Updating secret due to invalid expire time", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
 			shouldUpdate = true
 		} else {
-			margin := int64(120) // if expires in less then 2 min, we'll update it
-			if time.Now().Unix() >= e || time.Now().Unix() >= e+margin {
+			grace := int64(120) // if expires in less then 2 min, we'll update it
+			if time.Now().Unix() >= e || time.Now().Unix()+grace >= e {
 				shouldUpdate = true
-				r.Log.Info(fmt.Sprintf("Updating credentials %s expired on %s", currentSecret.Name, currentSecret.Annotations[expiresOnLabel]))
+				r.Log.Info(fmt.Sprintf("Credentials for secret %s expired on %s", currentSecret.Name, currentSecret.Annotations[expiresOnLabel]))
 			}
 		}
 		if !shouldUpdate {
@@ -152,19 +147,19 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	creds, err := vault.GetDbCredentials(dbSecret.Spec.Vault.Role, dbSecret.Spec.Vault.Mount)
 	if err != nil {
-		r.Log.Error(err, "Failed to obtain credentials from Vault")
+		r.Log.Error(err, "Failed to obtain credentials from Vault", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
 		return ctrl.Result{}, err
 	}
 
 	err = r.upsertSecret(&dbSecret, creds, currentSecret)
 	if err != nil {
-		r.Log.Error(err, "Failed to create secret")
+		r.Log.Error(err, "Failed to create secret", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
 		return ctrl.Result{}, nil
 	}
 	/* Patching resources to force a rollout if required */
 	if dbSecret.Spec.Rollout.Name != "" && dbSecret.Spec.Rollout.Kind != "" {
 		if err := r.rollout(&dbSecret); err != nil {
-			r.Log.Error(err, "Could not perform rollout")
+			r.Log.Error(err, "Could not perform rollout", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
 		}
 	}
 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
@@ -173,12 +168,8 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 // upsertSecret will create or update a secret
 func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, creds vault.VaultDbSecret, secret *corev1.Secret) error {
 	var err error
-	var secretName string
-	if sDef.Spec.SecretName != "" {
-		secretName = sDef.Spec.SecretName
-	} else {
-		secretName = sDef.Name
-	}
+
+	secretName := r.getSecretName(sDef)
 
 	if secret == nil {
 		secret = &corev1.Secret{}
@@ -287,16 +278,12 @@ func (r *DbSecretReconciler) getSecret(secretName string, namespace string) (*co
 
 // deleteSecret will delete a secret given its namespace and name
 func (r *DbSecretReconciler) deleteSecret(ctx context.Context, sDef *digitalisiov1beta1.DbSecret) error {
-	var name string
-	if sDef.Spec.SecretName != "" {
-		name = sDef.Spec.SecretName
-	} else {
-		name = sDef.Name
-	}
+	secretName := r.getSecretName(sDef)
+
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: sDef.Namespace,
-			Name:      name,
+			Name:      secretName,
 		},
 	}
 	return client.IgnoreNotFound(r.Delete(ctx, secret))
@@ -369,4 +356,15 @@ func (r *DbSecretReconciler) rollout(sDef *digitalisiov1beta1.DbSecret) error {
 	}
 
 	return nil
+}
+
+// rollout is used to restart the Deployment or StatefulSet
+func (r *DbSecretReconciler) getSecretName(sDef *digitalisiov1beta1.DbSecret) string {
+	var secretName string
+	if sDef.Spec.SecretName != "" {
+		secretName = sDef.Spec.SecretName
+	} else {
+		secretName = sDef.Name
+	}
+	return secretName
 }
