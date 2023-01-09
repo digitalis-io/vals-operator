@@ -157,9 +157,15 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 	/* Patching resources to force a rollout if required */
-	if dbSecret.Spec.Rollout.Name != "" && dbSecret.Spec.Rollout.Kind != "" {
-		if err := r.rollout(&dbSecret); err != nil {
-			r.Log.Error(err, "Could not perform rollout", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
+	for target := range dbSecret.Spec.Rollout {
+		if dbSecret.Spec.Rollout[target].Name != "" && dbSecret.Spec.Rollout[target].Kind != "" {
+			if err := r.rollout(&dbSecret, dbSecret.Spec.Rollout[target]); err != nil {
+				r.Log.Error(err, "Could not perform rollout",
+					"name", dbSecret.Name,
+					"namespace", dbSecret.Namespace,
+					"kind", dbSecret.Spec.Rollout[target].Kind,
+					"name", dbSecret.Spec.Rollout[target].Name)
+			}
 		}
 	}
 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
@@ -309,20 +315,20 @@ func (r *DbSecretReconciler) recordingEnabled(sDef *digitalisiov1beta1.DbSecret)
 }
 
 // rollout is used to restart the Deployment or StatefulSet
-func (r *DbSecretReconciler) rollout(sDef *digitalisiov1beta1.DbSecret) error {
+func (r *DbSecretReconciler) rollout(sDef *digitalisiov1beta1.DbSecret, rolloutTarget digitalisiov1beta1.DbRolloutTarget) error {
 	var err error
 
 	clientObject := types.NamespacedName{
 		Namespace: sDef.Namespace,
-		Name:      sDef.Spec.Rollout.Name,
+		Name:      rolloutTarget.Name,
 	}
-	r.Log.Info(fmt.Sprintf("Rolling restart %s/%s in namespace %s", sDef.Spec.Rollout.Kind, sDef.Spec.Rollout.Name, sDef.Namespace))
+	r.Log.Info(fmt.Sprintf("Rolling restart %s/%s in namespace %s", rolloutTarget.Kind, rolloutTarget.Name, sDef.Namespace))
 
-	if strings.ToLower(sDef.Spec.Rollout.Kind) == "deployment" {
+	if strings.ToLower(rolloutTarget.Kind) == "deployment" {
 		var object v1.Deployment
 		err = r.Get(r.Ctx, clientObject, &object)
 		if errors.IsNotFound(err) {
-			msg := fmt.Sprintf("%s/%s in namespace %s not found", sDef.Spec.Rollout.Kind, sDef.Spec.Rollout.Name, sDef.Namespace)
+			msg := fmt.Sprintf("%s/%s in namespace %s not found", rolloutTarget.Kind, rolloutTarget.Name, sDef.Namespace)
 			r.Log.Error(err, msg)
 			return nil
 		}
@@ -335,11 +341,11 @@ func (r *DbSecretReconciler) rollout(sDef *digitalisiov1beta1.DbSecret) error {
 		if err != nil {
 			return err
 		}
-	} else if strings.ToLower(sDef.Spec.Rollout.Kind) == "statefulset" {
+	} else if strings.ToLower(rolloutTarget.Kind) == "statefulset" {
 		var object v1.StatefulSet
 		err = r.Get(r.Ctx, clientObject, &object)
 		if errors.IsNotFound(err) {
-			r.Log.Error(err, fmt.Sprintf("%s/%s in namespace %s not found", sDef.Spec.Rollout.Kind, sDef.Spec.Rollout.Name, sDef.Namespace))
+			r.Log.Error(err, fmt.Sprintf("%s/%s in namespace %s not found", rolloutTarget.Kind, rolloutTarget.Name, sDef.Namespace))
 			return nil
 		}
 		if err != nil {
@@ -352,7 +358,7 @@ func (r *DbSecretReconciler) rollout(sDef *digitalisiov1beta1.DbSecret) error {
 			return err
 		}
 	} else {
-		return fmt.Errorf("%s kind is not supported", sDef.Spec.Rollout.Kind)
+		return fmt.Errorf("%s kind is not supported", rolloutTarget.Kind)
 	}
 
 	return nil
