@@ -20,6 +20,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,8 +43,10 @@ import (
 )
 
 var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	scheme                 = runtime.NewScheme()
+	setupLog               = ctrl.Log.WithName("setup")
+	developmentMode string = "false"
+	gitVersion      string = "main"
 )
 
 func init() {
@@ -75,13 +78,25 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+
+	d, err := strconv.ParseBool(developmentMode)
+	if err != nil {
+		d = true
+	}
 	opts := zap.Options{
-		Development: true,
+		Development: d,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	if developmentMode == "true" {
+		setupLog.Info("Starting controller manager in development mode")
+	}
+	if gitVersion != "" {
+		setupLog.Info("Version: ", "version", gitVersion)
+	}
 
 	nsSlice := func(ns string) []string {
 		trimmed := strings.Trim(strings.TrimSpace(ns), "\"")

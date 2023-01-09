@@ -3,6 +3,7 @@ FROM golang:1.19 as builder
 
 ARG TARGETOS
 ARG TARGETARCH
+ARG VERSION=main
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -21,7 +22,7 @@ COPY utils/ utils
 COPY apis/ apis/
 
 # Build
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -a -o vals-operator main.go
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -ldflags "-X main.developmentMode=false -X main.gitVersion=${VERSION}" -a -o vals-operator main.go
 
 # Use distroless as minimal base image to package the vals-operator binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
