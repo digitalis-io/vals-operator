@@ -129,6 +129,7 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	if currentSecret != nil && currentSecret.Name != "" {
 		shouldUpdate := false
+		canRenew := true
 		e, err := strconv.ParseInt(currentSecret.Annotations[expiresOnLabel], 10, 64)
 		if err != nil {
 			r.Log.Info("Updating secret due to invalid expire time", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
@@ -140,8 +141,25 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				r.Log.Info(fmt.Sprintf("Credentials for secret %s expired on %s", currentSecret.Name, currentSecret.Annotations[expiresOnLabel]))
 			}
 		}
+		if currentSecret.ObjectMeta.Annotations[forceCreateAnnotation] == "true" {
+			canRenew = false
+		}
+
+		// oldSecretData := currentSecret.Data
+		// newSecretData := dbSecret.Spec.Vault
+		// if !utils.ByteMapsMatch(oldSecretData, newSecretData) {
+		// 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
+		// }
+
 		if !shouldUpdate {
 			return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
+		}
+		if canRenew {
+			err = r.renewLease(&dbSecret, currentSecret)
+			if err != nil {
+				r.Log.Error(err, "Lease could not be extended", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
+			}
+			return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, err
 		}
 	}
 
@@ -171,6 +189,53 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
 }
 
+// renewLease will ask vault to renew the lease
+func (r *DbSecretReconciler) renewLease(sDef *digitalisiov1beta1.DbSecret, currentSecret *corev1.Secret) error {
+	var err error
+	var leaseId string
+
+	r.Log.Info("Renewing lease on secret", "name", sDef.Name, "namespace", sDef.Namespace)
+
+	// if it has a lease ID, we'll try to renew it first
+	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
+		return fmt.Errorf("cannot renew without lease Id")
+	}
+	leaseId = fmt.Sprintf("%s/creds/%s/%s",
+		sDef.Spec.Vault.Mount,
+		sDef.Spec.Vault.Role,
+		currentSecret.ObjectMeta.Annotations[leaseIdLabel])
+
+	var increment int
+	increment, err = strconv.Atoi(currentSecret.ObjectMeta.Annotations[leaseDurationLabel])
+	if err != nil {
+		r.Log.Error(err, "Can't get increment")
+		return err
+	}
+	err = vault.RenewDbCredentials(leaseId, increment)
+	if err != nil {
+		return err
+	}
+
+	currentSecret.ObjectMeta.Annotations[expiresOnLabel] = fmt.Sprintf("%d", time.Now().Unix()+int64(increment))
+	currentSecret.ObjectMeta.Annotations[lastUpdatedAnnotation] = time.Now().UTC().Format(timeLayout)
+	err = r.Update(r.Ctx, currentSecret)
+	if err != nil {
+		if r.recordingEnabled(sDef) {
+			msg := fmt.Sprintf("Secret %s lease not renewed %v", currentSecret.Name, err)
+			r.Recorder.Event(sDef, corev1.EventTypeNormal, "Failed", msg)
+		}
+		/* Force create new secret */
+		currentSecret.ObjectMeta.Annotations[forceCreateAnnotation] = "true"
+		return r.Update(r.Ctx, currentSecret)
+	}
+
+	if r.recordingEnabled(sDef) {
+		r.Recorder.Event(sDef, corev1.EventTypeNormal, "Updated", "Database lease renewed")
+	}
+
+	return err
+}
+
 // upsertSecret will create or update a secret
 func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, creds vault.VaultDbSecret, secret *corev1.Secret) error {
 	var err error
@@ -193,6 +258,7 @@ func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, cre
 	data := make(map[string]string)
 	data[usernameKey] = creds.Username
 	data[passwordKey] = creds.Password
+
 	/* Any other values are literals to add to the secret */
 	for k, v := range sDef.Spec.Secret {
 		if k != "username" && k != "password" {
@@ -214,13 +280,17 @@ func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, cre
 	if secret.ObjectMeta.Annotations == nil {
 		secret.ObjectMeta.Annotations = make(map[string]string)
 	}
+
 	utils.MergeMap(secret.ObjectMeta.Labels, sDef.ObjectMeta.Labels)
 	utils.MergeMap(secret.ObjectMeta.Annotations, sDef.ObjectMeta.Annotations)
 	secret.ObjectMeta.Annotations[managedByLabel] = "vals-operator"
-	//secret.ObjectMeta.Annotations[leaseIdLabel] = strings.Split(creds.LeaseId, "/")[3]
+	secret.ObjectMeta.Annotations[leaseIdLabel] = strings.Split(creds.LeaseId, "/")[3]
+
 	secret.ObjectMeta.Annotations[leaseDurationLabel] = fmt.Sprintf("%d", creds.LeaseDuration)
 	secret.ObjectMeta.Annotations[lastUpdatedAnnotation] = time.Now().UTC().Format(timeLayout)
 	secret.ObjectMeta.Annotations[expiresOnLabel] = fmt.Sprintf("%d", time.Now().Unix()+int64(creds.LeaseDuration))
+
+	delete(secret.ObjectMeta.Annotations, forceCreateAnnotation)
 
 	if err = controllerutil.SetControllerReference(sDef, secret, r.Scheme); err != nil {
 		return err
@@ -280,6 +350,11 @@ func (r *DbSecretReconciler) getSecret(secretName string, namespace string) (*co
 	}
 
 	return &secret, nil
+}
+
+// secretNeedsUpdate Checks if the secret data or definition has changed from the current secret
+func (r *DbSecretReconciler) secretNeedsUpdate(sDef *digitalisiov1beta1.DbSecret, secret *corev1.Secret, newData map[string][]byte) bool {
+	return false
 }
 
 // deleteSecret will delete a secret given its namespace and name

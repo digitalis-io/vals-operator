@@ -8,6 +8,7 @@ const (
 	timeLayout                 = "2006-01-02T15.04.05Z"
 	lastUpdatedAnnotation      = "vals-operator.digitalis.io/last-updated"
 	recordingEnabledAnnotation = "vals-operator.digitalis.io/record"
+	forceCreateAnnotation      = "vals-operator.digitalis.io/force"
 	managedByLabel             = "app.kubernetes.io/managed-by"
 	k8sSecretPrefix            = "ref+k8s://"
 )

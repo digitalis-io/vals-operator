@@ -200,7 +200,7 @@ type VaultDbSecret struct {
 	Password      string `json:"password"`
 }
 
-func RenewDbCredentials(s VaultDbSecret) (err error) {
+func RenewDbCredentials(leaseId string, increment int) (err error) {
 	if client == nil {
 		client, err = vaultClient()
 		if err != nil {
@@ -208,7 +208,25 @@ func RenewDbCredentials(s VaultDbSecret) (err error) {
 		}
 	}
 
-	return nil
+	if leaseId == "" {
+		return fmt.Errorf("missing lease id")
+	}
+
+	_, err = client.Sys().Renew(leaseId, increment)
+
+	return err
+}
+
+func RevokeDbCredentials(leaseId string) (err error) {
+	if client == nil {
+		client, err = vaultClient()
+		if err != nil {
+			return err
+		}
+	}
+
+	err = client.Sys().Revoke(leaseId)
+	return err
 }
 
 func GetDbCredentials(role string, mount string) (VaultDbSecret, error) {
