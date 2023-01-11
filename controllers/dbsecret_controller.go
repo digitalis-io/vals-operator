@@ -87,6 +87,11 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		r.Log.Info("Namespace requested is in the exclusion list, ignoring", "excluded_namespaces", r.ExcludeNamespaces)
 		return ctrl.Result{}, nil
 	}
+	secretName := r.getSecretName(&dbSecret)
+	currentSecret, err := r.getSecret(secretName, dbSecret.GetNamespace())
+	if client.IgnoreNotFound(err) != nil {
+		return ctrl.Result{}, err
+	}
 
 	//! [finalizer]
 	valsDbSecretFinalizerName := "dbsecret.digitalis.io/finalizer"
@@ -101,6 +106,11 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		// The object is being deleted
 		r.clearErrorCount(&dbSecret)
 		if utils.ContainsString(dbSecret.GetFinalizers(), valsDbSecretFinalizerName) {
+			err := r.revokeLease(&dbSecret, currentSecret)
+			if err != nil {
+				// log the error but continue
+				r.Log.Error(err, "Lease cannot be revoked")
+			}
 			// our finalizer is present, so lets handle any external dependency
 			if err := r.deleteSecret(ctx, &dbSecret); err != nil {
 				r.Log.Error(err, "Error deleting from Vals-Secret", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
@@ -119,13 +129,6 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 	//! [finalizer]
-
-	secretName := r.getSecretName(&dbSecret)
-
-	currentSecret, err := r.getSecret(secretName, dbSecret.GetNamespace())
-	if client.IgnoreNotFound(err) != nil {
-		return ctrl.Result{}, err
-	}
 
 	if currentSecret != nil && currentSecret.Name != "" {
 		shouldUpdate := false
@@ -187,6 +190,18 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
+}
+
+func (r *DbSecretReconciler) revokeLease(sDef *digitalisiov1beta1.DbSecret, currentSecret *corev1.Secret) error {
+	// if it has a lease ID, we'll try to renew it first
+	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
+		return fmt.Errorf("cannot renew without lease Id")
+	}
+	leaseId := fmt.Sprintf("%s/creds/%s/%s",
+		sDef.Spec.Vault.Mount,
+		sDef.Spec.Vault.Role,
+		currentSecret.ObjectMeta.Annotations[leaseIdLabel])
+	return vault.RevokeDbCredentials(leaseId)
 }
 
 // renewLease will ask vault to renew the lease

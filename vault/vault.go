@@ -224,7 +224,9 @@ func RevokeDbCredentials(leaseId string) (err error) {
 			return err
 		}
 	}
-
+	if leaseId == "" {
+		return fmt.Errorf("missing lease id")
+	}
 	err = client.Sys().Revoke(leaseId)
 	return err
 }
