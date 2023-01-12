@@ -217,6 +217,24 @@ func RenewDbCredentials(leaseId string, increment int) (err error) {
 	return err
 }
 
+func IsLeaseValid(leaseId string) bool {
+	var err error
+	if client == nil {
+		client, err = vaultClient()
+		if err != nil {
+			return false
+		}
+	}
+	if leaseId == "" {
+		return false
+	}
+	_, err = client.Sys().Lookup(leaseId)
+	if err != nil {
+		return false
+	}
+	return true
+}
+
 func RevokeDbCredentials(leaseId string) (err error) {
 	if client == nil {
 		client, err = vaultClient()

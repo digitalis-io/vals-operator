@@ -133,6 +133,7 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if currentSecret != nil && currentSecret.Name != "" {
 		shouldUpdate := false
 		canRenew := true
+
 		e, err := strconv.ParseInt(currentSecret.Annotations[expiresOnLabel], 10, 64)
 		if err != nil {
 			r.Log.Info("Updating secret due to invalid expire time", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
@@ -144,7 +145,17 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				r.Log.Info(fmt.Sprintf("Credentials for secret %s expired on %s", currentSecret.Name, currentSecret.Annotations[expiresOnLabel]))
 			}
 		}
-		if currentSecret.ObjectMeta.Annotations[forceCreateAnnotation] == "true" {
+		if !r.isLeaseValid(&dbSecret, currentSecret) {
+			shouldUpdate = true
+			canRenew = false
+			if r.recordingEnabled(&dbSecret) {
+				r.Recorder.Event(&dbSecret, corev1.EventTypeNormal, "Update", "Invalid lease found")
+			}
+			r.Log.Info("Invalid lease", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
+		} else if currentSecret.ObjectMeta.Annotations[forceCreateAnnotation] == "true" {
+			if r.recordingEnabled(&dbSecret) {
+				r.Recorder.Event(&dbSecret, corev1.EventTypeNormal, "Update", "Lease could not be renewed. New credentials will be issued")
+			}
 			canRenew = false
 		}
 
@@ -193,7 +204,6 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *DbSecretReconciler) revokeLease(sDef *digitalisiov1beta1.DbSecret, currentSecret *corev1.Secret) error {
-	// if it has a lease ID, we'll try to renew it first
 	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
 		return fmt.Errorf("cannot renew without lease Id")
 	}
@@ -205,13 +215,28 @@ func (r *DbSecretReconciler) revokeLease(sDef *digitalisiov1beta1.DbSecret, curr
 }
 
 // renewLease will ask vault to renew the lease
+func (r *DbSecretReconciler) isLeaseValid(sDef *digitalisiov1beta1.DbSecret, currentSecret *corev1.Secret) bool {
+	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
+		return false
+	}
+	leaseId := fmt.Sprintf("%s/creds/%s/%s",
+		sDef.Spec.Vault.Mount,
+		sDef.Spec.Vault.Role,
+		currentSecret.ObjectMeta.Annotations[leaseIdLabel])
+	ok := vault.IsLeaseValid(leaseId)
+	if !ok {
+		r.Log.Info("Lease on secret no longer valid", "name", sDef.Name, "namespace", sDef.Namespace)
+	}
+	return ok
+}
+
+// renewLease will ask vault to renew the lease
 func (r *DbSecretReconciler) renewLease(sDef *digitalisiov1beta1.DbSecret, currentSecret *corev1.Secret) error {
 	var err error
 	var leaseId string
 
 	r.Log.Info("Renewing lease on secret", "name", sDef.Name, "namespace", sDef.Namespace)
 
-	// if it has a lease ID, we'll try to renew it first
 	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
 		return fmt.Errorf("cannot renew without lease Id")
 	}
