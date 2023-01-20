@@ -159,11 +159,16 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			canRenew = false
 		}
 
-		// oldSecretData := currentSecret.Data
-		// newSecretData := dbSecret.Spec.Vault
-		// if !utils.ByteMapsMatch(oldSecretData, newSecretData) {
-		// 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
-		// }
+		oldSecretData := currentSecret.Data
+		newSecretData := dbSecret.Spec.Secret
+		if !utils.StringByteMatch(newSecretData, oldSecretData) {
+			if r.recordingEnabled(&dbSecret) {
+				r.Recorder.Event(&dbSecret, corev1.EventTypeNormal, "Update", "DbSecret has changed, updating Kubernetes Secret")
+			}
+			r.Log.Info("DbSecret has changed, updating Kubernetes Secret", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
+			shouldUpdate = true
+			canRenew = false
+		}
 
 		if !shouldUpdate {
 			return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
@@ -177,6 +182,12 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
+	/* Because we're about to request a new credential, revoke any possible old ones */
+	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
+		if err := r.revokeLease(&dbSecret, currentSecret); err != nil {
+			r.Log.Error(err, "Old lease could not be revoked", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
+		}
+	}
 	creds, err := vault.GetDbCredentials(dbSecret.Spec.Vault.Role, dbSecret.Spec.Vault.Mount)
 	if err != nil {
 		r.Log.Error(err, "Failed to obtain credentials from Vault", "name", dbSecret.Name, "namespace", dbSecret.Namespace)

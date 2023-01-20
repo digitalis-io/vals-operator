@@ -202,6 +202,10 @@ spec:
 
 ## Vault database credentials
 
+---
+> **_NOTE:_**  Vault >= 1.10 is required for this feature to work
+---
+
 A great feature in HashiCorp Vault is the generate [database credentials](https://developer.hashicorp.com/vault/docs/secrets/databases) dynamically.
 The missing part is you need these credentials in Kubernertes where your applications are. This is why we have added a new resource definition to do just that:
 

@@ -57,6 +57,23 @@ func ByteMapsMatch(m1, m2 map[string][]byte) bool {
 	return true
 }
 
+// StringByteMatch returns true if map[string]string and map[string][]byte have the same contents
+func StringByteMatch(s map[string]string, b map[string][]byte) bool {
+	for key, value1 := range s {
+		if key == "username" || key == "password" {
+			continue
+		}
+		value2, ok := b[key]
+		if !ok {
+			return false
+		}
+		if string(value2) != value1 {
+			return false
+		}
+	}
+	return true
+}
+
 func MergeMap(dst map[string]string, src map[string]string) {
 	for k, v := range src {
 		dst[k] = v
