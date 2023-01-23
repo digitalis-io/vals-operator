@@ -1,6 +1,8 @@
 package utils
 
-import "regexp"
+import (
+	"regexp"
+)
 
 // StringMapsMatch returns true if the provided maps contain the same keys and values, otherwise false
 func StringMapsMatch(m1, m2 map[string]string, ignoreKeys []string) bool {
@@ -63,6 +65,7 @@ func StringByteMatch(s map[string]string, b map[string][]byte) bool {
 		if key == "username" || key == "password" {
 			continue
 		}
+
 		value2, ok := b[key]
 		if !ok {
 			return false
