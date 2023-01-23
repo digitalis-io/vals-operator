@@ -183,7 +183,7 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	/* Because we're about to request a new credential, revoke any possible old ones */
-	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
+	if currentSecret != nil && currentSecret.Name != "" && currentSecret.ObjectMeta.Annotations[leaseIdLabel] != "" {
 		if err := r.revokeLease(&dbSecret, currentSecret); err != nil {
 			r.Log.Error(err, "Old lease could not be revoked", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
 		}
@@ -215,6 +215,9 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *DbSecretReconciler) revokeLease(sDef *digitalisiov1beta1.DbSecret, currentSecret *corev1.Secret) error {
+	if currentSecret == nil || currentSecret.Name != "" {
+		return nil
+	}
 	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
 		return fmt.Errorf("cannot renew without lease Id")
 	}
