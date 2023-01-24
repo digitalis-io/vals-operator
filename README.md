@@ -60,13 +60,6 @@ helm upgrade --install vals-operator --create-namespace -n vals-operator \
 ```
 
 > :information_source: Check out the [documentation](./docs/index.md) for further details and examples including EKS integration.
-
-## Rancher
-
-`Vals-Operator` is also available to install from the Rancher Marketplace.
-
-![Rancher](rancher.png)
-
 ## HashiCorp Vault Authentication
 
 If you're using Vault as backend you can also enable the Kubernetes Auth login method. Refer to the [HashiCorp documentation](https://www.vaultproject.io/docs/auth/kubernetes) on creating a role.
@@ -198,6 +191,35 @@ spec:
       hosts:
         - my-elastic                    # this would be converted to http://my-elastic:9200
         - https://my-other-elastic:9200 # provide full URL instead
+```
+
+## Vault database credentials
+
+---
+> **_NOTE:_**  Vault >= 1.10 is required for this feature to work
+---
+
+A great feature in HashiCorp Vault is the generate [database credentials](https://developer.hashicorp.com/vault/docs/secrets/databases) dynamically.
+The missing part is you need these credentials in Kubernertes where your applications are. This is why we have added a new resource definition to do just that:
+
+```yaml
+apiVersion: digitalis.io/v1beta1
+kind: DbSecret
+metadata:
+  name: cassandra
+spec:
+  vault:
+    role: readonly
+    mount: cass000
+  secret: # optional: vault returns the values as `username` and `password` but you may need different variable names
+    username: "CASSANDRA_USERNAME"
+    password: "CASSANDRA_PASSWORD"
+    CASSANDRA_HOSTS: 127.0.0.1 # anything other than username and password are literals you can define
+  rollout: # optional: run a `rollout` to make the pods use new credentials
+    - kind: Deployment
+      name: cassandra-client
+    - kind: StatefulSet
+      name: cassandra-client-other
 ```
 
 ## Options

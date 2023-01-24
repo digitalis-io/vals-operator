@@ -21,6 +21,10 @@ serviceAccount:
 
 manageCrds: true
 
+# This may not be required by everyone and the pod will require wider permissions
+# which may not be desired on secure environments
+enableDbSecrets: true
+
 # additional arguments to operator
 args: []
   # -exclude-namespaces string

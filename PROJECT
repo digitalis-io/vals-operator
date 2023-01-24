@@ -1,6 +1,7 @@
 domain: digitalis.io
 layout:
 - go.kubebuilder.io/v3
+multigroup: true
 projectName: vals-operator
 repo: digitalis.io/vals-operator
 resources:
@@ -11,6 +12,15 @@ resources:
   domain: digitalis.io
   group: secret
   kind: ValsSecret
-  path: digitalis.io/vals-operator/api/v1
+  path: digitalis.io/vals-operator/apis/digitalis.io/v1
   version: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: digitalis.io
+  group: digitalis.io
+  kind: DbSecret
+  path: digitalis.io/vals-operator/apis/digitalis.io/v1beta1
+  version: v1beta1
 version: "3"
