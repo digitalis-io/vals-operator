@@ -60,13 +60,6 @@ helm upgrade --install vals-operator --create-namespace -n vals-operator \
 ```
 
 > :information_source: Check out the [documentation](./docs/index.md) for further details and examples including EKS integration.
-
-## Rancher
-
-`Vals-Operator` is also available to install from the Rancher Marketplace.
-
-![Rancher](rancher.png)
-
 ## HashiCorp Vault Authentication
 
 If you're using Vault as backend you can also enable the Kubernetes Auth login method. Refer to the [HashiCorp documentation](https://www.vaultproject.io/docs/auth/kubernetes) on creating a role.

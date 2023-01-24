@@ -161,7 +161,7 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 		oldSecretData := currentSecret.Data
 		newSecretData := dbSecret.Spec.Secret
-		if !utils.StringByteMatch(newSecretData, oldSecretData) {
+		if !utils.SecretStringByteMatch(newSecretData, oldSecretData) {
 			if r.recordingEnabled(&dbSecret) {
 				r.Recorder.Event(&dbSecret, corev1.EventTypeNormal, "Update", "DbSecret has changed, updating Kubernetes Secret")
 			}
