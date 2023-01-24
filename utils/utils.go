@@ -67,11 +67,10 @@ func SecretStringByteMatch(s map[string]string, b map[string][]byte) bool {
 		return false
 	}
 	for key, value1 := range s {
-		if key == "username" || key == "password" || key == usernameKey || key == passwordKey {
-			continue
-		}
-		if value2, ok := b[key]; !ok || string(value2) != value1 {
-			return false
+		if key != "username" && key != "password" && key != usernameKey && key != passwordKey {
+			if value2, ok := b[key]; !ok || string(value2) != value1 {
+				return false
+			}
 		}
 	}
 	return true
