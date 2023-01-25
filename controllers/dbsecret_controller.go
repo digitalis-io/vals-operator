@@ -173,7 +173,7 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if !shouldUpdate {
 			return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
 		}
-		if canRenew {
+		if canRenew && dbSecret.Spec.Renew {
 			err = r.renewLease(&dbSecret, currentSecret)
 			if err != nil {
 				r.Log.Error(err, "Lease could not be extended", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
