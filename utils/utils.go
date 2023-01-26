@@ -61,11 +61,18 @@ func ByteMapsMatch(m1, m2 map[string][]byte) bool {
 
 // SecretStringByteMatch returns true if map[string]string and map[string][]byte have the same contents
 func SecretStringByteMatch(s map[string]string, b map[string][]byte) bool {
-	passwordKey := s["password"]
-	usernameKey := s["username"]
-	if len(s) != len(b) {
+	/* The generated secret has always at least two values, username and password */
+	/* The DbSecret could be null or contain additional entries */
+	if s == nil && len(b) == 2 {
+		return true
+	}
+	if s == nil && len(b) > 2 {
 		return false
 	}
+
+	passwordKey := s["password"]
+	usernameKey := s["username"]
+
 	for key, value1 := range s {
 		if key != "username" && key != "password" && key != usernameKey && key != passwordKey {
 			if value2, ok := b[key]; !ok || string(value2) != value1 {
@@ -73,6 +80,7 @@ func SecretStringByteMatch(s map[string]string, b map[string][]byte) bool {
 			}
 		}
 	}
+
 	return true
 }
 
