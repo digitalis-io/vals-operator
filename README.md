@@ -208,6 +208,7 @@ kind: DbSecret
 metadata:
   name: cassandra
 spec:
+  renew: true # this is the default, otherwise a new credential will be generated every time
   vault:
     role: readonly
     mount: cass000
