@@ -26,6 +26,8 @@ require (
 	sigs.k8s.io/controller-runtime v0.14.1
 )
 
+require github.com/Masterminds/sprig v2.22.0+incompatible
+
 require (
 	cloud.google.com/go v0.107.0 // indirect
 	cloud.google.com/go/compute v1.14.0 // indirect
@@ -53,7 +55,6 @@ require (
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/Masterminds/semver/v3 v3.2.0 // indirect
-	github.com/Masterminds/sprig v2.22.0+incompatible // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20221026131551-cf6655e29de4 // indirect
 	github.com/a8m/envsubst v1.3.0 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
