@@ -20,10 +20,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"html/template"
 	"strconv"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	sprig "github.com/Masterminds/sprig/v3"
