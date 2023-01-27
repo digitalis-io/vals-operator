@@ -1,7 +1,15 @@
 package utils
 
 import (
+	"bytes"
+	"crypto/md5"
+	"encoding/hex"
+	"fmt"
 	"regexp"
+	"sort"
+	"text/template"
+
+	"github.com/Masterminds/sprig"
 )
 
 // StringMapsMatch returns true if the provided maps contain the same keys and values, otherwise false
@@ -61,18 +69,7 @@ func ByteMapsMatch(m1, m2 map[string][]byte) bool {
 
 // SecretStringByteMatch returns true if map[string]string and map[string][]byte have the same contents
 func SecretStringByteMatch(s map[string]string, b map[string][]byte) bool {
-	passwordKey := s["password"]
-	usernameKey := s["username"]
-	if len(s) != len(b) {
-		return false
-	}
-	for key, value1 := range s {
-		if key != "username" && key != "password" && key != usernameKey && key != passwordKey {
-			if value2, ok := b[key]; !ok || string(value2) != value1 {
-				return false
-			}
-		}
-	}
+
 	return true
 }
 
@@ -129,4 +126,55 @@ func K8sSecretFound(m map[string]string) bool {
 		}
 	}
 	return true
+}
+
+func SecretHashString(m map[string]string) string {
+	var str string
+	for _, k := range SortedKeysMapString(m) {
+		str = fmt.Sprintf("%s%s%s", str, k, m[k])
+	}
+	hasher := md5.New()
+	hasher.Write([]byte(str))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func SecretHashBytes(m map[string][]byte) string {
+	var str string
+	for k, v := range m {
+		str = fmt.Sprintf("%s%s%s", str, k, v)
+	}
+	hasher := md5.New()
+	hasher.Write([]byte(str))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func CreateFakeHash(m map[string]string) string {
+	data := make(map[string]string)
+	dataStr := make(map[string]string)
+	dataStr["username"] = "fake"
+	dataStr["password"] = "fake"
+
+	/* Render any template given with fake username and password */
+	for k, v := range m {
+		b := bytes.NewBuffer(nil)
+		t, err := template.New(k).Funcs(sprig.FuncMap()).Parse(v)
+		if err != nil {
+			return ""
+		}
+		if err := t.Execute(b, &dataStr); err != nil {
+			return ""
+		}
+
+		data[k] = string(b.Bytes())
+	}
+	return SecretHashString(data)
+}
+
+func SortedKeysMapString(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

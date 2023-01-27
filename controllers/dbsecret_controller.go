@@ -17,13 +17,16 @@ limitations under the License.
 package controllers
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"html/template"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	sprig "github.com/Masterminds/sprig/v3"
 	"github.com/go-logr/logr"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -159,15 +162,11 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			canRenew = false
 		}
 
-		oldSecretData := currentSecret.Data
-		newSecretData := dbSecret.Spec.Secret
-		if !utils.SecretStringByteMatch(newSecretData, oldSecretData) {
-			if r.recordingEnabled(&dbSecret) {
-				r.Recorder.Event(&dbSecret, corev1.EventTypeNormal, "Update", "DbSecret has changed, updating Kubernetes Secret")
+		newHash := utils.CreateFakeHash(dbSecret.Spec.Template)
+		if newHash != "" && currentSecret.Annotations[templateHash] != "" {
+			if newHash != currentSecret.Annotations[templateHash] {
+				shouldUpdate = true
 			}
-			r.Log.Info("DbSecret has changed, updating Kubernetes Secret", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
-			shouldUpdate = true
-			canRenew = false
 		}
 
 		if !shouldUpdate {
@@ -300,27 +299,17 @@ func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, cre
 		secret = &corev1.Secret{}
 	}
 
-	usernameKey := "username"
-	passwordKey := "password"
-	if sDef.Spec.Secret["username"] != "" {
-		usernameKey = sDef.Spec.Secret["username"]
-	}
-	if sDef.Spec.Secret["password"] != "" {
-		passwordKey = sDef.Spec.Secret["password"]
-	}
-	// if I use StringData I can avoid base64encoding the data
-	data := make(map[string]string)
-	data[usernameKey] = creds.Username
-	data[passwordKey] = creds.Password
+	dataStr := make(map[string]string)
+	dataStr["username"] = creds.Username
+	dataStr["password"] = creds.Password
+	data := r.renderTemplate(sDef, dataStr)
 
-	/* Any other values are literals to add to the secret */
-	for k, v := range sDef.Spec.Secret {
-		if k != "username" && k != "password" {
-			data[k] = v
-		}
+	/* FIXME: what is username is in the template but not the password */
+	if len(data) < 1 {
+		secret.StringData = dataStr
+	} else {
+		secret.Data = data
 	}
-	secret.StringData = data
-	secret.Data = nil
 
 	secret.Name = secretName
 	secret.Namespace = sDef.Namespace
@@ -343,7 +332,8 @@ func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, cre
 	secret.ObjectMeta.Annotations[leaseDurationLabel] = fmt.Sprintf("%d", creds.LeaseDuration)
 	secret.ObjectMeta.Annotations[lastUpdatedAnnotation] = time.Now().UTC().Format(timeLayout)
 	secret.ObjectMeta.Annotations[expiresOnLabel] = fmt.Sprintf("%d", time.Now().Unix()+int64(creds.LeaseDuration))
-
+	/* Hash to check for changes later on */
+	secret.ObjectMeta.Annotations[templateHash] = utils.CreateFakeHash(sDef.Spec.Template)
 	delete(secret.ObjectMeta.Annotations, forceCreateAnnotation)
 
 	if err = controllerutil.SetControllerReference(sDef, secret, r.Scheme); err != nil {
@@ -502,4 +492,33 @@ func (r *DbSecretReconciler) getSecretName(sDef *digitalisiov1beta1.DbSecret) st
 		secretName = sDef.Name
 	}
 	return secretName
+}
+
+func (r *DbSecretReconciler) renderTemplate(sDef *digitalisiov1beta1.DbSecret, dataStr map[string]string) map[string][]byte {
+	data := make(map[string][]byte)
+
+	/* Render any template given */
+	for k, v := range sDef.Spec.Template {
+		b := bytes.NewBuffer(nil)
+		t, err := template.New(k).Funcs(sprig.FuncMap()).Parse(v)
+		if err != nil {
+			r.Log.Error(err, "Cannot parse template")
+			if r.recordingEnabled(sDef) {
+				msg := fmt.Sprintf("Template could not be parsed: %v", err)
+				r.Recorder.Event(sDef, corev1.EventTypeNormal, "Failed", msg)
+			}
+			return data
+		}
+		if err := t.Execute(b, &dataStr); err != nil {
+			r.Log.Error(err, "Cannot render template")
+			if r.recordingEnabled(sDef) {
+				msg := fmt.Sprintf("Template could not be rendered: %v", err)
+				r.Recorder.Event(sDef, corev1.EventTypeNormal, "Failed", msg)
+			}
+			return data
+		}
+
+		data[k] = b.Bytes()
+	}
+	return data
 }
