@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"reflect"
 	"regexp"
 )
 
@@ -62,7 +63,7 @@ func ByteMapsMatch(m1, m2 map[string][]byte) bool {
 // SecretStringByteMatch returns true if map[string]string and map[string][]byte have the same contents
 func SecretStringByteMatch(s map[string]string, b map[string][]byte) bool {
 	/* The generated secret has always at least two values, username and password */
-	/* The DbSecret could be null or contain additional entries */
+	/* The DbSecret could be null, contain only username, only password, both or additional entries */
 	if s == nil && len(b) == 2 {
 		return true
 	}
@@ -70,14 +71,36 @@ func SecretStringByteMatch(s map[string]string, b map[string][]byte) bool {
 		return false
 	}
 
-	passwordKey := s["password"]
-	usernameKey := s["username"]
+	passwordKey := "password"
+	usernameKey := "username"
+	if s["password"] != "" {
+		passwordKey = s["password"]
+		if _, ok := b[passwordKey]; !ok {
+			return false
+		}
+	}
+	if s["password"] == "" && string(b["password"]) == "" {
+		return false
+	}
 
-	for key, value1 := range s {
-		if key != "username" && key != "password" && key != usernameKey && key != passwordKey {
-			if value2, ok := b[key]; !ok || string(value2) != value1 {
-				return false
-			}
+	if s["username"] != "" {
+		usernameKey = s["username"]
+		if _, ok := b[usernameKey]; !ok {
+			return false
+		}
+	}
+	if s["username"] == "" && string(b["username"]) == "" {
+		return false
+	}
+	s1 := reflect.ValueOf(s).Interface().(map[string]string)
+	b1 := reflect.ValueOf(b).Interface().(map[string][]byte)
+	delete(s1, "username")
+	delete(s1, "password")
+	delete(b1, usernameKey)
+	delete(b1, passwordKey)
+	for key, value1 := range s1 {
+		if value2, ok := b1[key]; !ok || string(value2) != value1 {
+			return false
 		}
 	}
 
