@@ -62,8 +62,11 @@ func ByteMapsMatch(m1, m2 map[string][]byte) bool {
 
 // SecretStringByteMatch returns true if map[string]string and map[string][]byte have the same contents
 func SecretStringByteMatch(s map[string]string, b map[string][]byte) bool {
-	/* The generated secret has always at least two values, username and password */
-	/* The DbSecret could be null, contain only username, only password, both or additional entries */
+	/*
+		The generated secret has always at least two values, username and password. Also, they may not be called
+		`username` and `password` so we need to check for that.
+		The DbSecret could be null, contain only username, only password, both or additional entries
+	*/
 	if s == nil && len(b) == 2 {
 		return true
 	}
