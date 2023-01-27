@@ -67,12 +67,6 @@ func ByteMapsMatch(m1, m2 map[string][]byte) bool {
 	return true
 }
 
-// SecretStringByteMatch returns true if map[string]string and map[string][]byte have the same contents
-func SecretStringByteMatch(s map[string]string, b map[string][]byte) bool {
-
-	return true
-}
-
 func MergeMap(dst map[string]string, src map[string]string) {
 	for k, v := range src {
 		dst[k] = v
@@ -132,16 +126,6 @@ func SecretHashString(m map[string]string) string {
 	var str string
 	for _, k := range SortedKeysMapString(m) {
 		str = fmt.Sprintf("%s%s%s", str, k, m[k])
-	}
-	hasher := md5.New()
-	hasher.Write([]byte(str))
-	return hex.EncodeToString(hasher.Sum(nil))
-}
-
-func SecretHashBytes(m map[string][]byte) string {
-	var str string
-	for k, v := range m {
-		str = fmt.Sprintf("%s%s%s", str, k, v)
 	}
 	hasher := md5.New()
 	hasher.Write([]byte(str))
