@@ -212,10 +212,6 @@ spec:
   vault:
     role: readonly
     mount: cass000
-  secret: # optional: vault returns the values as `username` and `password` but you may need different variable names
-    username: "CASSANDRA_USERNAME"
-    password: "CASSANDRA_PASSWORD"
-    CASSANDRA_HOSTS: 127.0.0.1 # anything other than username and password are literals you can define
   rollout: # optional: run a `rollout` to make the pods use new credentials
     - kind: Deployment
       name: cassandra-client
