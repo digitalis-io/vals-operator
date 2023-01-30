@@ -121,6 +121,35 @@ The default encoding is `text` but you can change it to `base64` per secret refe
 You may also use GoLang templates to format a secret. You can inject as variables any of the keys referenced in the `data` section to format, for example, a configuration file.
 The [sprig](https://github.com/Masterminds/sprig/blob/master/docs/index.md) functions are supported.
 
+## Vault database credentials
+
+---
+> **_NOTE:_**  Vault >= 1.10 is required for this feature to work
+---
+
+A great feature in HashiCorp Vault is the generate [database credentials](https://developer.hashicorp.com/vault/docs/secrets/databases) dynamically.
+The missing part is you need these credentials in Kubernertes where your applications are. This is why we have added a new resource definition to do just that:
+
+```yaml
+apiVersion: digitalis.io/v1beta1
+kind: DbSecret
+metadata:
+  name: cassandra
+spec:
+  renew: true # this is the default, otherwise a new credential will be generated every time
+  vault:
+    role: readonly
+    mount: cass000
+  template: # optional: change the secret format
+    CASSANDRA_USERNAME: "{{ .username }}"
+    CASSANDRA_PASSWORD: "{{ .password }}"
+  rollout: # optional: run a `rollout` to make the pods use new credentials
+    - kind: Deployment
+      name: cassandra-client
+    - kind: StatefulSet
+      name: cassandra-client-other
+```
+
 ## Advance config: password rotation
 
 If you're running a database you may want to keep the secrets in sync between your secrets store, Kubernetes and the database. This can be handy for password rotation to ensure the clients don't use the same password all the time. Please be aware your client *must* suppport re-reading the secret and reconnecting whenever it is updated.
@@ -191,32 +220,6 @@ spec:
       hosts:
         - my-elastic                    # this would be converted to http://my-elastic:9200
         - https://my-other-elastic:9200 # provide full URL instead
-```
-
-## Vault database credentials
-
----
-> **_NOTE:_**  Vault >= 1.10 is required for this feature to work
----
-
-A great feature in HashiCorp Vault is the generate [database credentials](https://developer.hashicorp.com/vault/docs/secrets/databases) dynamically.
-The missing part is you need these credentials in Kubernertes where your applications are. This is why we have added a new resource definition to do just that:
-
-```yaml
-apiVersion: digitalis.io/v1beta1
-kind: DbSecret
-metadata:
-  name: cassandra
-spec:
-  renew: true # this is the default, otherwise a new credential will be generated every time
-  vault:
-    role: readonly
-    mount: cass000
-  rollout: # optional: run a `rollout` to make the pods use new credentials
-    - kind: Deployment
-      name: cassandra-client
-    - kind: StatefulSet
-      name: cassandra-client-other
 ```
 
 ## Options

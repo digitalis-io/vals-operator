@@ -9,6 +9,7 @@ const (
 	lastUpdatedAnnotation      = "vals-operator.digitalis.io/last-updated"
 	recordingEnabledAnnotation = "vals-operator.digitalis.io/record"
 	forceCreateAnnotation      = "vals-operator.digitalis.io/force"
+	templateHash               = "vals-operator.digitalis.io/hash"
 	managedByLabel             = "app.kubernetes.io/managed-by"
 	k8sSecretPrefix            = "ref+k8s://"
 )

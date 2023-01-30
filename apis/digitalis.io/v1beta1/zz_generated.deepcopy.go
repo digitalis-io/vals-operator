@@ -118,8 +118,8 @@ func (in *DbSecretRollout) DeepCopy() *DbSecretRollout {
 func (in *DbSecretSpec) DeepCopyInto(out *DbSecretSpec) {
 	*out = *in
 	out.Vault = in.Vault
-	if in.Secret != nil {
-		in, out := &in.Secret, &out.Secret
+	if in.Template != nil {
+		in, out := &in.Template, &out.Template
 		*out = make(map[string]string, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val

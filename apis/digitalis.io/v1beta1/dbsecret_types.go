@@ -28,7 +28,7 @@ type DbSecretSpec struct {
 	// Name can override the secret name, defaults to manifests.name
 	SecretName string            `json:"secretName,omitempty"`
 	Vault      DbVaultConfig     `json:"vault"`
-	Secret     map[string]string `json:"secret,omitempty"`
+	Template   map[string]string `json:"template,omitempty"`
 	Renew      bool              `json:"renew,omitempty"`
 	Rollout    []DbRolloutTarget `json:"rollout,omitempty"`
 }
