@@ -313,7 +313,6 @@ func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, cre
 	dataStr["password"] = creds.Password
 	data := r.renderTemplate(sDef, dataStr)
 
-	/* FIXME: what is username is in the template but not the password */
 	if len(data) < 1 {
 		secret.StringData = dataStr
 	} else {
