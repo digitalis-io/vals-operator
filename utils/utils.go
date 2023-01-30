@@ -151,6 +151,7 @@ func CreateFakeHash(m map[string]string) string {
 
 		data[k] = string(b.Bytes())
 	}
+
 	return SecretHashString(data)
 }
 

@@ -162,6 +162,15 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			canRenew = false
 		}
 
+		/* If the new secret doesn't have a template anymore, make sure it's deleted from the secret */
+		if len(dbSecret.Spec.Template) == 0 {
+			for k, _ := range currentSecret.Data {
+				if k != "username" && k != "password" {
+					delete(currentSecret.Data, k)
+				}
+			}
+		}
+
 		newHash := utils.CreateFakeHash(dbSecret.Spec.Template)
 		if newHash != "" && currentSecret.Annotations[templateHash] != "" {
 			if newHash != currentSecret.Annotations[templateHash] {
