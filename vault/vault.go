@@ -263,7 +263,11 @@ func GetDbCredentials(role string, mount string) (VaultDbSecret, error) {
 	if err != nil {
 		return dbSecret, err
 	}
-
+	if s == nil ||
+		s.Data["username"] == "" || s.Data["password"] == "" ||
+		s.Data["username"] == nil || s.Data["password"] == nil {
+		return dbSecret, fmt.Errorf("Vault did not return credentials")
+	}
 	dbSecret = VaultDbSecret{
 		LeaseId:       s.LeaseID,
 		LeaseDuration: s.LeaseDuration,
