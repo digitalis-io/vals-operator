@@ -1,5 +1,9 @@
-# Build the vals-operator binary
-FROM golang:1.19 as builder
+FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:1.19 as builder
+
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
 
 ARG TARGETOS
 ARG TARGETARCH
