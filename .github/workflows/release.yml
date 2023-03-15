@@ -30,11 +30,11 @@ jobs:
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v3
-        platforms: linux/amd64,linux/arm/v6,linux/arm64
-        build-args: |
-          Version=${{  env.TAG }}
-          GitCommit=${{ github.sha }}
         with:
+          platforms: linux/amd64,linux/arm/v6,linux/arm64
+          build-args: |
+            Version=${{  env.TAG }}
+            GitCommit=${{ github.sha }}
           context: .
           push: true
           tags: |
