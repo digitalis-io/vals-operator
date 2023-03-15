@@ -39,5 +39,5 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ env.REPO_OWNER }}/vals-operator:${{ github.sha }}
-            ghcr.io/${{ env.REPO_OWNER }}/vals-operator:${{ env.TAG }}
+            #ghcr.io/${{ env.REPO_OWNER }}/vals-operator:${{ env.TAG }}
             ghcr.io/${{ env.REPO_OWNER }}/vals-operator:latest
