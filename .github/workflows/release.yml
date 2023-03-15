@@ -12,7 +12,7 @@ jobs:
     name: Push Docker image to Docker Hub
     runs-on: actuated
     permissions:
-      package: write
+      packages: write
     steps:
       - name: Check out the repo
         uses: actions/checkout@v3
