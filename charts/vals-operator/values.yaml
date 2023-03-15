@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: digitalisdocker/vals-operator
+  repository: ghcr.io/digitalis-io/vals-operator
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
