@@ -30,7 +30,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -
 
 # Use distroless as minimal base image to package the vals-operator binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot
+FROM --platform=${BUILDPLATFORM:-linux/amd64} gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/vals-operator /vals-operator
 USER 65532:65532
