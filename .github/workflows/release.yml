@@ -33,7 +33,7 @@ jobs:
         with:
           platforms: linux/amd64,linux/arm/v6,linux/arm64
           build-args: |
-            Version=${{  env.TAG }}
+            VERSION=${GITHUB_REF##*/}
             GitCommit=${{ github.sha }}
           context: .
           push: true
