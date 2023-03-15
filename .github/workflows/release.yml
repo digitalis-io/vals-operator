@@ -22,7 +22,7 @@ jobs:
 
       - name: Get TAG
         id: get_tag
-        run: echo TAG=${GITHUB_REF#refs/tags/} >> $GITHUB_ENV
+        run: echo TAG=${GITHUB_REF##*/} >> $GITHUB_ENV
 
       - name: Get Repo Owner
         id: get_repo_owner
@@ -33,11 +33,11 @@ jobs:
         with:
           platforms: linux/amd64,linux/arm/v6,linux/arm64
           build-args: |
-            VERSION=${GITHUB_REF##*/}
+            VERSION=${ env.TAG }}
             GitCommit=${{ github.sha }}
           context: .
           push: true
           tags: |
             ghcr.io/${{ env.REPO_OWNER }}/vals-operator:${{ github.sha }}
-            #ghcr.io/${{ env.REPO_OWNER }}/vals-operator:${{ env.TAG }}
+            ghcr.io/${{ env.REPO_OWNER }}/vals-operator:${{ env.TAG }}
             ghcr.io/${{ env.REPO_OWNER }}/vals-operator:latest
