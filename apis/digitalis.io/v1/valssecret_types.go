@@ -26,7 +26,7 @@ import (
 // DataSource defines a secret
 type DataSource struct {
 	// Ref value to the secret in the format ref+backend://path
-	// https://github.com/variantdev/vals
+	// https://github.com/helmfile/vals
 	Ref string `json:"ref"`
 	// Encoding type for the secret. Only base64 supported. Optional
 	Encoding string `json:"encoding,omitempty"`
