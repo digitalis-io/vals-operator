@@ -10,7 +10,7 @@ on:
 jobs:
   release:
     name: Push Docker image to Docker Hub
-    runs-on: actuated
+    runs-on: ubuntu-latest
     permissions:
       packages: write
     steps:
