@@ -30,7 +30,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/variantdev/vals"
+	"github.com/helmfile/vals"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 

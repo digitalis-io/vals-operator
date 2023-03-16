@@ -57,7 +57,7 @@ args: []
 
 environmentSecret: ""
 
-# See https://github.com/variantdev/vals
+# See https://github.com/helmfile/vals
 # for information on setting up your backend environment.
 env: []
   # - name: VAULT_SKIP_VERIFY
