@@ -201,7 +201,7 @@ type VaultDbSecret struct {
 	Username      string `json:"username"`
 	Password      string `json:"password"`
 	Hosts         string `json:"hosts"`
-	ConnectionURL string `json:"hosts"`
+	ConnectionURL string `json:"connection_url"`
 }
 
 func RenewDbCredentials(leaseId string, increment int) (err error) {
