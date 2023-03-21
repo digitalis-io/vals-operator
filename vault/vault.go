@@ -279,25 +279,26 @@ func GetDbCredentials(role string, mount string) (VaultDbSecret, error) {
 	path = fmt.Sprintf("%s/config/%s", mount, mount)
 	cfg, err2 := client.Logical().Read(path)
 	if err2 != nil {
-		return dbSecret, fmt.Errorf("vault did not return the connection details for the database: %v", err2)
-	}
-	conn, ok := cfg.Data["connection_details"].(map[string]interface{})
-	if !ok {
-		return dbSecret, fmt.Errorf("vault did not return the connection details for the database")
-	}
+		log.Info("Could not get access details for the database", err2)
+	} else {
+		conn, ok := cfg.Data["connection_details"].(map[string]interface{})
+		if !ok {
+			return dbSecret, fmt.Errorf("vault did not return the connection details for the database")
+		}
 
-	hosts, _ = conn["hosts"].(string)
-	connectionURL, _ = conn["connection_url"].(string)
-	port = conn["port"].(json.Number).String()
+		hosts, _ = conn["hosts"].(string)
+		connectionURL, _ = conn["connection_url"].(string)
+		port = conn["port"].(json.Number).String()
 
-	if connectionURL != "" {
-		connectionURL = strings.Replace(connectionURL, "{{username}}", s.Data["username"].(string), 1)
-		connectionURL = strings.Replace(connectionURL, "{{password}}", s.Data["password"].(string), 1)
-	}
+		if connectionURL != "" {
+			connectionURL = strings.Replace(connectionURL, "{{username}}", s.Data["username"].(string), 1)
+			connectionURL = strings.Replace(connectionURL, "{{password}}", s.Data["password"].(string), 1)
+		}
 
-	if hosts != "" && port != "" {
-		rep := fmt.Sprintf(":%s,", port)
-		hosts = fmt.Sprintf("%s:%s", strings.Replace(hosts, ",", rep, -1), port)
+		if hosts != "" && port != "" {
+			rep := fmt.Sprintf(":%s,", port)
+			hosts = fmt.Sprintf("%s:%s", strings.Replace(hosts, ",", rep, -1), port)
+		}
 	}
 
 	dbSecret = VaultDbSecret{

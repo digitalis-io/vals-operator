@@ -223,11 +223,12 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *DbSecretReconciler) revokeLease(sDef *digitalisiov1beta1.DbSecret, currentSecret *corev1.Secret) error {
-	r.Log.Info(fmt.Sprintf("Revoking lease for %s", currentSecret.Name))
-
 	if currentSecret == nil || currentSecret.Name != "" {
 		return nil
 	}
+
+	r.Log.Info(fmt.Sprintf("Revoking lease for %s", currentSecret.Name))
+
 	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
 		return fmt.Errorf("cannot revoke credentials without lease Id")
 	}
