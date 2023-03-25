@@ -472,10 +472,12 @@ func (r *DbSecretReconciler) rollout(sDef *digitalisiov1beta1.DbSecret, rolloutT
 			return err
 		}
 
-		object.Spec.Template.Annotations[restartedAnnotation] = time.Now().UTC().Format(timeLayout)
-		err = r.Update(r.Ctx, &object)
-		if err != nil {
-			return err
+		if object.Status.ReadyReplicas > 0 {
+			object.Spec.Template.Annotations[restartedAnnotation] = time.Now().UTC().Format(timeLayout)
+			err = r.Update(r.Ctx, &object)
+			if err != nil {
+				return err
+			}
 		}
 	} else if strings.ToLower(rolloutTarget.Kind) == "statefulset" {
 		var object v1.StatefulSet
@@ -488,10 +490,12 @@ func (r *DbSecretReconciler) rollout(sDef *digitalisiov1beta1.DbSecret, rolloutT
 			return err
 		}
 
-		object.Spec.Template.Annotations[restartedAnnotation] = time.Now().UTC().Format(timeLayout)
-		err = r.Update(r.Ctx, &object)
-		if err != nil {
-			return err
+		if object.Status.ReadyReplicas > 0 {
+			object.Spec.Template.Annotations[restartedAnnotation] = time.Now().UTC().Format(timeLayout)
+			err = r.Update(r.Ctx, &object)
+			if err != nil {
+				return err
+			}
 		}
 	} else {
 		return fmt.Errorf("%s kind is not supported", rolloutTarget.Kind)
