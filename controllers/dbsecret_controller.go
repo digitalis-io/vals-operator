@@ -226,8 +226,11 @@ func (r *DbSecretReconciler) revokeLease(sDef *digitalisiov1beta1.DbSecret, curr
 	if currentSecret == nil || currentSecret.Name != "" {
 		return nil
 	}
+
+	r.Log.Info(fmt.Sprintf("Revoking lease for %s", currentSecret.Name))
+
 	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
-		return fmt.Errorf("cannot renew without lease Id")
+		return fmt.Errorf("cannot revoke credentials without lease Id")
 	}
 	leaseId := fmt.Sprintf("%s/creds/%s/%s",
 		sDef.Spec.Vault.Mount,
@@ -311,6 +314,12 @@ func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, cre
 	dataStr := make(map[string]string)
 	dataStr["username"] = creds.Username
 	dataStr["password"] = creds.Password
+	if creds.ConnectionURL != "" {
+		dataStr["connection_url"] = creds.ConnectionURL
+	}
+	if creds.Hosts != "" {
+		dataStr["hosts"] = creds.Hosts
+	}
 	data := r.renderTemplate(sDef, dataStr)
 
 	if len(data) < 1 {
@@ -463,10 +472,12 @@ func (r *DbSecretReconciler) rollout(sDef *digitalisiov1beta1.DbSecret, rolloutT
 			return err
 		}
 
-		object.Spec.Template.Annotations[restartedAnnotation] = time.Now().UTC().Format(timeLayout)
-		err = r.Update(r.Ctx, &object)
-		if err != nil {
-			return err
+		if object.Status.ReadyReplicas > 0 {
+			object.Spec.Template.Annotations[restartedAnnotation] = time.Now().UTC().Format(timeLayout)
+			err = r.Update(r.Ctx, &object)
+			if err != nil {
+				return err
+			}
 		}
 	} else if strings.ToLower(rolloutTarget.Kind) == "statefulset" {
 		var object v1.StatefulSet
@@ -479,10 +490,12 @@ func (r *DbSecretReconciler) rollout(sDef *digitalisiov1beta1.DbSecret, rolloutT
 			return err
 		}
 
-		object.Spec.Template.Annotations[restartedAnnotation] = time.Now().UTC().Format(timeLayout)
-		err = r.Update(r.Ctx, &object)
-		if err != nil {
-			return err
+		if object.Status.ReadyReplicas > 0 {
+			object.Spec.Template.Annotations[restartedAnnotation] = time.Now().UTC().Format(timeLayout)
+			err = r.Update(r.Ctx, &object)
+			if err != nil {
+				return err
+			}
 		}
 	} else {
 		return fmt.Errorf("%s kind is not supported", rolloutTarget.Kind)

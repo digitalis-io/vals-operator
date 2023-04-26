@@ -3,9 +3,11 @@ package vault
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/hashicorp/vault/api"
 	vault "github.com/hashicorp/vault/api"
@@ -198,6 +200,8 @@ type VaultDbSecret struct {
 	LeaseDuration int    `json:"lease_duration"`
 	Username      string `json:"username"`
 	Password      string `json:"password"`
+	Hosts         string `json:"hosts"`
+	ConnectionURL string `json:"connection_url"`
 }
 
 func RenewDbCredentials(leaseId string, increment int) (err error) {
@@ -266,13 +270,44 @@ func GetDbCredentials(role string, mount string) (VaultDbSecret, error) {
 	if s == nil ||
 		s.Data["username"] == "" || s.Data["password"] == "" ||
 		s.Data["username"] == nil || s.Data["password"] == nil {
-		return dbSecret, fmt.Errorf("Vault did not return credentials")
+		return dbSecret, fmt.Errorf("vault did not return credentials: %v", err)
 	}
+	/* Get connection URL or hosts list */
+	var connectionURL string
+	var hosts string
+	var port string
+	path = fmt.Sprintf("%s/config/%s", mount, mount)
+	cfg, err2 := client.Logical().Read(path)
+	if err2 != nil {
+		log.Info("Could not get access details for the database", err2)
+	} else {
+		conn, ok := cfg.Data["connection_details"].(map[string]interface{})
+		if !ok {
+			return dbSecret, fmt.Errorf("vault did not return the connection details for the database")
+		}
+
+		hosts, _ = conn["hosts"].(string)
+		connectionURL, _ = conn["connection_url"].(string)
+		port = conn["port"].(json.Number).String()
+
+		if connectionURL != "" {
+			connectionURL = strings.Replace(connectionURL, "{{username}}", s.Data["username"].(string), 1)
+			connectionURL = strings.Replace(connectionURL, "{{password}}", s.Data["password"].(string), 1)
+		}
+
+		if hosts != "" && port != "" {
+			rep := fmt.Sprintf(":%s,", port)
+			hosts = fmt.Sprintf("%s:%s", strings.Replace(hosts, ",", rep, -1), port)
+		}
+	}
+
 	dbSecret = VaultDbSecret{
 		LeaseId:       s.LeaseID,
 		LeaseDuration: s.LeaseDuration,
 		Username:      s.Data["username"].(string),
 		Password:      s.Data["password"].(string),
+		Hosts:         hosts,
+		ConnectionURL: connectionURL,
 	}
 
 	return dbSecret, nil
