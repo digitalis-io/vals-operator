@@ -2,12 +2,16 @@
 
 [![CI](https://github.com/digitalis-io/vals-operator/actions/workflows/pre-commit.yml/badge.svg)](https://github.com/digitalis-io/vals-operator/actions/workflows/pre-commit.yml)
 [![GoDoc](https://godoc.org/github.com/digitalis-io/vals-operator?status.svg)](https://pkg.go.dev/github.com/digitalis-io/vals-operator?tab=doc)
+[![Go Report Card](https://goreportcard.com/badge/github.com/digitalis-io/vals-operator)](https://goreportcard.com/report/github.com/digitalis-io/vals-operator)
 ![GitHub](https://img.shields.io/github/license/digitalis-io/vals-operator)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/digitalis-io/vals-operator)
 
-Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/helmfile/vals), it's a tool we use daily to keep secrets stored securely. We also use [secrets-manager](https://github.com/tuenti/secrets-manager) on the Kubernetes deployment we manage. Inspired by these two wonderful tools we have created this operator.
+Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/helmfile/vals), it's a tool we use daily to keep secrets stored securely. Inspired by this tool,
+we have created an operator to manage Kubernetes secrets.
 
-*vals-operator* syncs secrets from any secrets store supported by [vals](https://github.com/helmfile/vals) into Kubernetes. It works very similarly to [secrets-manager](https://github.com/tuenti/secrets-manager) and the code is actually based on it. Where they differ is that it not just supports HashiCorp Vault but many other secrets stores.
+*vals-operator* syncs secrets from any secrets store supported by [vals](https://github.com/helmfile/vals) into Kubernetes. It works very similarly to [secrets-manager](https://github.com/tuenti/secrets-manager) and the code is actually based on it. Where they differ is that it not just supports HashiCorp Vault but many other secrets stores. Also, `vals-operator` supports database secrets
+as provider by [HashiCorp Vault Secret Engine](https://developer.hashicorp.com/vault/docs/secrets/databases).
+
 
 ## Demo
 
@@ -220,38 +224,4 @@ spec:
       hosts:
         - my-elastic                    # this would be converted to http://my-elastic:9200
         - https://my-other-elastic:9200 # provide full URL instead
-```
-
-## Options
-
-The following options are available. See the [helm chart documentation](charts/vals-operator/README.md) for more information on adding them to your deployment configuration.
-
-```sh
-Usage of ./bin/vals-operator:
-  -exclude-namespaces string
-    	Comma separated list of namespaces to ignore.
-  -health-probe-bind-address string
-    	The address the probe endpoint binds to. (default ":8081")
-  -kubeconfig string
-    	Paths to a kubeconfig. Only required if out-of-cluster.
-  -leader-elect
-    	Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.
-  -metrics-bind-address string
-    	The address the metric endpoint binds to. (default ":8080")
-  -reconcile-period duration
-    	How often the controller will re-queue vals-operator events. (default 5s)
-  -record-changes
-    	Records every time a secret has been updated. You can view them with kubectl describe. It may also be disabled globally and enabled per secret via the annotation 'vals-operator.digitalis.io/record: "true"' (default true)
-  -ttl duration
-    	How often to check backend for updates. (default 5m0s)
-  -watch-namespaces string
-    	Comma separated list of namespaces that vals-operator will watch.
-  -zap-devel
-    	Development Mode defaults(encoder=consoleEncoder,logLevel=Debug,stackTraceLevel=Warn). Production Mode defaults(encoder=jsonEncoder,logLevel=Info,stackTraceLevel=Error) (default true)
-  -zap-encoder value
-    	Zap log encoding (one of 'json' or 'console')
-  -zap-log-level value
-    	Zap Level to configure the verbosity of logging. Can be one of 'debug', 'info', 'error', or any integer value > 0 which corresponds to custom debug levels of increasing verbosity
-  -zap-stacktrace-level value
-    	Zap Level at and above which stacktraces are captured (one of 'info', 'error', 'panic').
 ```
