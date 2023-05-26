@@ -1,6 +1,8 @@
 vals-operator
 =============
-This helm chart installs the Digitalis Vals Operator to manage sync secrets from supported backends into Kubernetes
+This helm chart installs the Digitalis Vals Operator to manage and sync secrets from supported backends into Kubernetes.
+
+Current chart version is `0.7.2`
 
 
 ## Chart Values
@@ -9,13 +11,16 @@ This helm chart installs the Digitalis Vals Operator to manage sync secrets from
 |-----|------|---------|-------------|
 | affinity | object | `{}` |  |
 | args | list | `[]` |  |
+| enableDbSecrets | bool | `true` |  |
 | env | list | `[]` |  |
+| environmentSecret | string | `""` |  |
 | fullnameOverride | string | `""` |  |
 | image.pullPolicy | string | `"IfNotPresent"` |  |
-| image.repository | string | `"digitalisdocker/vals-operator"` |  |
+| image.repository | string | `"ghcr.io/digitalis-io/vals-operator"` |  |
 | image.tag | string | `""` |  |
 | imagePullSecrets | list | `[]` |  |
 | manageCrds | bool | `true` |  |
+| metricsPort | int | `8080` |  |
 | nameOverride | string | `""` |  |
 | nodeSelector | object | `{}` |  |
 | podSecurityContext | object | `{}` |  |
