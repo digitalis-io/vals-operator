@@ -10,7 +10,7 @@ type: application
 version: 0.7.2
 
 # Latest container tag
-appVersion: "0.7.2"
+appVersion: "v0.7.2"
 
 maintainers:
 - email: info@digitalis.io
