@@ -16,7 +16,7 @@ as provider by [HashiCorp Vault Secret Engine](https://developer.hashicorp.com/v
 
 You can watch this brief video on how it works:
 
-[![YouTube](./youtube-video.png)](https://www.youtube.com/watch?feature=player_embedded&v=wLzkrKdSBT8)
+[![YouTube](../../youtube-video.png)](https://www.youtube.com/watch?feature=player_embedded&v=wLzkrKdSBT8)
 
 
 ## Chart Values
