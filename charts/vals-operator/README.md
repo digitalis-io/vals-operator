@@ -5,12 +5,18 @@ This helm chart installs the Digitalis Vals Operator to manage and sync secrets 
 
 ## About Vals-Operator
 
-Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/helmfile/vals), it's a tool we use daily to keep secrets stored securely.
-Inspired by it, we have created an operator to manage Kubernetes secrets.
+Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/helmfile/vals), it's a tool we use daily to keep secrets stored securely. Inspired by this tool,
+we have created an operator to manage Kubernetes secrets.
 
-*vals-operator* syncs secrets from any secrets store supported by vals into Kubernetes. It works very similarly to secrets-manager and the code is
-actually based on it. Where they differ is that it not just supports HashiCorp Vault but many other secrets stores. Also, vals-operator supports
-database secrets as provider by HashiCorp Vault Secret Engine.
+*vals-operator* syncs secrets from any secrets store supported by [vals](https://github.com/helmfile/vals) into Kubernetes. Also, `vals-operator` supports database secrets
+as provider by [HashiCorp Vault Secret Engine](https://developer.hashicorp.com/vault/docs/secrets/databases).
+
+
+## Demo
+
+You can watch this brief video on how it works:
+
+[![YouTube](./youtube-video.png)](https://www.youtube.com/watch?feature=player_embedded&v=wLzkrKdSBT8)
 
 
 ## Chart Values
