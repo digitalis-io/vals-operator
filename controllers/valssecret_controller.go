@@ -300,6 +300,8 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 			msg := fmt.Sprintf("Secret %s not saved %v", secret.Name, err)
 			r.Recorder.Event(sDef, corev1.EventTypeNormal, "Failed", msg)
 		}
+		SecretFailures.Inc()
+		SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 		return err
 	}
 
