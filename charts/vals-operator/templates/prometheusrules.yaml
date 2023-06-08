@@ -1,0 +1,40 @@
+{{- if .Values.prometheusRules.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "vals-operator.fullname" . }}
+  labels:
+    {{- include "vals-operator.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: vals-operator
+      rules:
+{{- if .Values.enableDbSecrets }}
+        - alert: ValsOperatorDbSecretError
+          expr: vals_operator_dbsecret_error > time() - 300
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: vals-operator database secret not issued
+            description: "Vals operator has been unable to issue database credentials to {{`{{`}}$labels.secret{{`}}`}} in namespace {{`{{`}}$labels.namespace{{`}}`}}"
+      {{- if .Values.prometheusRules.additionalRuleLabels }}
+        {{- with .Values.prometheusRules.additionalRuleLabels }}
+          {{- toYaml . | nindent 12 }}
+        {{- end }}
+      {{- end }}
+{{- end }}
+        - alert: ValsOperatorSecretError
+          expr: vals_operator_secret_error > time() - 300
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: vals-operator secret not issued
+            description: "Vals operator has been unable to create the secret for {{`{{`}}$labels.secret{{`}}`}} in namespace {{`{{`}}$labels.namespace{{`}}`}}"
+      {{- if .Values.prometheusRules.additionalRuleLabels }}
+        {{- with .Values.prometheusRules.additionalRuleLabels }}
+          {{- toYaml . | nindent 12 }}
+        {{- end }}
+      {{- end }}
+{{- end }}
