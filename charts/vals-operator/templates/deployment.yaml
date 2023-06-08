@@ -55,6 +55,8 @@ spec:
           {{- end }}
           ports:
             - containerPort: {{ .Values.metricsPort | default 8080 }}
+              name: metrics
+              protocol: TCP
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

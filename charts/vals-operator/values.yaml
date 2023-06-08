@@ -25,6 +25,14 @@ manageCrds: true
 # which may not be desired on secure environments
 enableDbSecrets: true
 
+prometheusRules:
+  enabled: false
+  ## Additional labels for PrometheusRule alerts
+  additionalRuleLabels: {}
+
+  ## Additional annotations for PrometheusRule alerts
+  additionalRuleAnnotations: {}
+
 # additional arguments to operator
 args: []
   # -exclude-namespaces string
@@ -88,13 +96,12 @@ securityContext: {}
   # runAsNonRoot: true
   # runAsUser: 1000
 
-metricsPort: 8080
-serviceMonitor:
-  # When set to true then use a ServiceMonitor to collect metrics
+podMonitor:
+  # When set to true then use a podMonitor to collect metrics
   enabled: false
-  # Custom labels to use in the ServiceMonitor to be matched with a specific Prometheus
+  # Custom labels to use in the podMonitor to be matched with a specific Prometheus
   labels: {}
-  # Set the namespace the ServiceMonitor should be deployed to
+  # Set the namespace the podMonitor should be deployed to
   # namespace: default
   # Set how frequently Prometheus should scrape
   # interval: 30s

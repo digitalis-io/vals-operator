@@ -10,6 +10,9 @@ Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/helm
 we have created an operator to manage Kubernetes secrets. As [Digitalis](https://digitalis.io) and our sister company [AxonOps](https://axonops.com) are data companies,
 we also added a set of features tailored for running databases.
 
+*vals-operator* syncs secrets from any secrets store supported by [vals](https://github.com/helmfile/vals) into Kubernetes. Also, *vals-operator* supports database secrets
+as provider by the [HashiCorp Vault Secret Engine](https://developer.hashicorp.com/vault/docs/secrets/databases).
+
 ## Demo
 
 You can watch this brief video on how it works:

@@ -199,12 +199,16 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	creds, err := vault.GetDbCredentials(dbSecret.Spec.Vault.Role, dbSecret.Spec.Vault.Mount)
 	if err != nil {
 		r.Log.Error(err, "Failed to obtain credentials from Vault", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
+		DbSecretFailures.Inc()
+		DbSecretError.WithLabelValues(dbSecret.Name, dbSecret.Namespace).SetToCurrentTime()
 		return ctrl.Result{}, err
 	}
 
 	err = r.upsertSecret(&dbSecret, creds, currentSecret)
 	if err != nil {
 		r.Log.Error(err, "Failed to create secret", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
+		DbSecretFailures.Inc()
+		DbSecretError.WithLabelValues(dbSecret.Name, dbSecret.Namespace).SetToCurrentTime()
 		return ctrl.Result{}, nil
 	}
 	/* Patching resources to force a rollout if required */
