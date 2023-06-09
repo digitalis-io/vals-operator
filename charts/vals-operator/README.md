@@ -12,13 +12,6 @@ we have created an operator to manage Kubernetes secrets.
 as provider by [HashiCorp Vault Secret Engine](https://developer.hashicorp.com/vault/docs/secrets/databases).
 
 
-## Demo
-
-You can watch this brief video on how it works:
-
-[![YouTube](../../youtube-video.png)](https://www.youtube.com/watch?feature=player_embedded&v=wLzkrKdSBT8)
-
-
 ## Chart Values
 
 | Key | Type | Default | Description |
@@ -34,10 +27,14 @@ You can watch this brief video on how it works:
 | image.tag | string | `""` |  |
 | imagePullSecrets | list | `[]` |  |
 | manageCrds | bool | `true` |  |
-| metricsPort | int | `8080` |  |
 | nameOverride | string | `""` |  |
 | nodeSelector | object | `{}` |  |
+| podMonitor.enabled | bool | `false` |  |
+| podMonitor.labels | object | `{}` |  |
 | podSecurityContext | object | `{}` |  |
+| prometheusRules.additionalRuleAnnotations | object | `{}` |  |
+| prometheusRules.additionalRuleLabels | object | `{}` |  |
+| prometheusRules.enabled | bool | `false` |  |
 | replicaCount | int | `1` |  |
 | resources | object | `{}` |  |
 | secretEnv | list | `[]` |  |
@@ -45,8 +42,6 @@ You can watch this brief video on how it works:
 | serviceAccount.annotations | object | `{}` |  |
 | serviceAccount.create | bool | `true` |  |
 | serviceAccount.name | string | `""` |  |
-| serviceMonitor.enabled | bool | `false` |  |
-| serviceMonitor.labels | object | `{}` |  |
 | tolerations | list | `[]` |  |
 | volumeMounts | list | `[]` |  |
 | volumes | list | `[]` |  |

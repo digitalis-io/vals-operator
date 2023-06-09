@@ -7,10 +7,10 @@ kubeVersion: ">= 1.19.0-0"
 type: application
 
 # Chart version
-version: 0.7.4
+version: 0.7.5
 
 # Latest container tag
-appVersion: "v0.7.4"
+appVersion: "v0.7.5"
 
 maintainers:
 - email: info@digitalis.io
