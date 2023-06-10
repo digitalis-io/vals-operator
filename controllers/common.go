@@ -15,8 +15,6 @@ limitations under the License.
 */
 package controllers
 
-import "github.com/prometheus/client_golang/prometheus"
-
 const (
 	leaseIdLabel               = "vals-operator.digitalis.io/lease-id"
 	leaseDurationLabel         = "vals-operator.digitalis.io/lease-duration"
@@ -29,50 +27,4 @@ const (
 	templateHash               = "vals-operator.digitalis.io/hash"
 	managedByLabel             = "app.kubernetes.io/managed-by"
 	k8sSecretPrefix            = "ref+k8s://"
-)
-
-var (
-	SecretFailures = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "vals_operator_secret_failures",
-			Help: "Number of errors generating secrets",
-		},
-	)
-	DbSecretFailures = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name: "vals_operator_dbsecret_failures",
-			Help: "Number of errors generating DB secrets",
-		},
-	)
-	SecretError = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "vals_operator_secret_error",
-			Help: "Reports timestamp from when a secret last failed to be updated",
-		}, []string{"secret", "namespace"})
-	DbSecretError = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "vals_operator_dbsecret_error",
-			Help: "Reports timestamp from when a DB secret last failed to be updated",
-		}, []string{"secret", "namespace"})
-
-	SecretInfo = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "vals_operator_secret_info",
-			Help: "Tracks secret, timestamp is when it was last updated",
-		}, []string{"secret", "namespace"})
-	DbSecretInfo = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "vals_operator_dbsecret_info",
-			Help: "Tracks database secret, timestamp is when it was last updated",
-		}, []string{"secret", "namespace"})
-	DbSecretExpireTime = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "vals_operator_dbsecret_expire_time",
-			Help: "Reports if the when the secret expired last",
-		}, []string{"secret", "namespace"})
-	VaultError = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "vals_operator_vault_error",
-			Help: "Timestamp if Vault backend is used and fails",
-		}, []string{"addr"})
 )

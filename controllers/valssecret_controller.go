@@ -44,6 +44,7 @@ import (
 	secretv1 "digitalis.io/vals-operator/apis/digitalis.io/v1"
 	valsDb "digitalis.io/vals-operator/db"
 	dbType "digitalis.io/vals-operator/db/types"
+	dmetrics "digitalis.io/vals-operator/metrics"
 	"digitalis.io/vals-operator/utils"
 	sprig "github.com/Masterminds/sprig/v3"
 )
@@ -300,13 +301,13 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 			msg := fmt.Sprintf("Secret %s not saved %v", secret.Name, err)
 			r.Recorder.Event(sDef, corev1.EventTypeNormal, "Failed", msg)
 		}
-		SecretFailures.Inc()
-		SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
+		dmetrics.SecretFailures.Inc()
+		dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 		return err
 	}
 
 	/* Prometheus */
-	SecretInfo.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
+	dmetrics.SecretInfo.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 
 	if r.recordingEnabled(sDef) {
 		r.Recorder.Event(sDef, corev1.EventTypeNormal, "Updated", "Secret created or updated")
