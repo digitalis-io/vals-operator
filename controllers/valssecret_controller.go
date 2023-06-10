@@ -1,5 +1,5 @@
 /*
-Copyright 2022 Digitalis.IO.
+Copyright 2023 Digitalis.IO.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -304,6 +304,9 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 		SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 		return err
 	}
+
+	/* Prometheus */
+	SecretInfo.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 
 	if r.recordingEnabled(sDef) {
 		r.Recorder.Event(sDef, corev1.EventTypeNormal, "Updated", "Secret created or updated")

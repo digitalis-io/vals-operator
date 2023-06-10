@@ -1,5 +1,5 @@
 /*
-Copyright 2021 Digitalis.IO.
+Copyright 2023 Digitalis.IO.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -211,6 +211,7 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		DbSecretError.WithLabelValues(dbSecret.Name, dbSecret.Namespace).SetToCurrentTime()
 		return ctrl.Result{}, nil
 	}
+
 	/* Patching resources to force a rollout if required */
 	for target := range dbSecret.Spec.Rollout {
 		if dbSecret.Spec.Rollout[target].Name != "" && dbSecret.Spec.Rollout[target].Kind != "" {
@@ -375,6 +376,13 @@ func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, cre
 		}
 		return err
 	}
+	/* Prometheus */
+	f, err := strconv.ParseFloat(secret.Annotations[expiresOnLabel], 10)
+	if err != nil {
+		f = float64(time.Now().UnixNano())
+	}
+	DbSecretExpireTime.WithLabelValues(secret.Name, secret.Namespace).Set(f)
+	DbSecretInfo.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 
 	if r.recordingEnabled(sDef) {
 		r.Recorder.Event(sDef, corev1.EventTypeNormal, "Updated", "Secret created or updated")

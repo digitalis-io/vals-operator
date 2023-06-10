@@ -56,7 +56,16 @@ func init() {
 	utilruntime.Must(secretv1.AddToScheme(scheme))
 	utilruntime.Must(digitalisiov1beta1.AddToScheme(scheme))
 
-	metrics.Registry.MustRegister(controllers.SecretFailures, controllers.DbSecretFailures, controllers.SecretError, controllers.DbSecretError)
+	metrics.Registry.MustRegister(
+		controllers.SecretFailures,
+		controllers.DbSecretFailures,
+		controllers.SecretError,
+		controllers.DbSecretError,
+		controllers.DbSecretExpireTime,
+		controllers.DbSecretInfo,
+		controllers.SecretInfo,
+		controllers.VaultError
+	)
 	//+kubebuilder:scaffold:scheme
 }
 
