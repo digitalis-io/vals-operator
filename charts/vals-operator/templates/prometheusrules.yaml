@@ -22,7 +22,7 @@ spec:
       {{- end }}
           annotations:
             summary: vals-operator database secret not issued
-            description: "Vals operator has been unable to issue database credentials to {{`{{`}}$labels.secret{{`}}`}} in namespace {{`{{`}}$labels.namespace{{`}}`}}"
+            description: "Vals operator has been unable to issue database credentials for secret {{`{{`}}$labels.secret{{`}}`}} in namespace {{`{{`}}$labels.namespace{{`}}`}}"
       {{- if .Values.prometheusRules.additionalRuleAnnotations }}
         {{- with .Values.prometheusRules.additionalRuleAnnotations }}
           {{- toYaml . | nindent 12 }}
@@ -40,7 +40,7 @@ spec:
       {{- end }}
           annotations:
             summary: vals-operator database secret expired
-            description: "Vals operator database credentials for {{`{{`}}$labels.secret{{`}}`}} in namespace {{`{{`}}$labels.namespace{{`}}`}} expired"
+            description: "Vals operator database credentials for secret {{`{{`}}$labels.secret{{`}}`}} in namespace {{`{{`}}$labels.namespace{{`}}`}} expired"
       {{- if .Values.prometheusRules.additionalRuleAnnotations }}
         {{- with .Values.prometheusRules.additionalRuleAnnotations }}
           {{- toYaml . | nindent 12 }}
