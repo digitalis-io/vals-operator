@@ -126,6 +126,9 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			if err := r.Update(context.Background(), &dbSecret); err != nil {
 				return ctrl.Result{}, err
 			}
+			/* mark as deleted in prom */
+			dmetrics.DbSecretExpireTime.WithLabelValues(dbSecret.Name, dbSecret.Namespace).Set(0)
+			dmetrics.DbSecretInfo.WithLabelValues(dbSecret.Name, dbSecret.Namespace).Set(0)
 		}
 
 		// Stop reconciliation as the item is being deleted

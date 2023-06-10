@@ -28,6 +28,24 @@ spec:
           {{- toYaml . | nindent 12 }}
         {{- end }}
       {{- end }}
+        - alert: ValsOperatorDbSecretExpired
+          expr: time() > vals_operator_dbsecret_expire_time
+          for: 30m
+          labels:
+            severity: warning
+      {{- if .Values.prometheusRules.additionalRuleLabels }}
+        {{- with .Values.prometheusRules.additionalRuleLabels }}
+          {{- toYaml . | nindent 12 }}
+        {{- end }}
+      {{- end }}
+          annotations:
+            summary: vals-operator database secret expired
+            description: "Vals operator database credentials for {{`{{`}}$labels.secret{{`}}`}} in namespace {{`{{`}}$labels.namespace{{`}}`}} expired"
+      {{- if .Values.prometheusRules.additionalRuleAnnotations }}
+        {{- with .Values.prometheusRules.additionalRuleAnnotations }}
+          {{- toYaml . | nindent 12 }}
+        {{- end }}
+      {{- end }}
 {{- end }}
         - alert: ValsOperatorSecretError
           expr: vals_operator_secret_error > time() - 300
