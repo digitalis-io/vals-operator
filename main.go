@@ -66,6 +66,9 @@ func init() {
 		dmetrics.DbSecretInfo,
 		dmetrics.SecretInfo,
 		dmetrics.VaultError,
+		dmetrics.VaultTokenError,
+		dmetrics.SecretRetrieveTime,
+		dmetrics.SecretCreationTime,
 	)
 	//+kubebuilder:scaffold:scheme
 }

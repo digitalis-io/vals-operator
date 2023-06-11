@@ -61,4 +61,19 @@ var (
 			Name: "vals_operator_vault_error",
 			Help: "Timestamp if Vault backend is used and fails",
 		}, []string{"addr"})
+	VaultTokenError = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "vals_operator_vault_token_error",
+			Help: "Timestamp if Vault token is invalid or expired",
+		}, []string{"addr"})
+	SecretRetrieveTime = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "vals_operator_secret_retrieve_time",
+			Help: "Time in ms it took to get the secret",
+		}, []string{"secret", "namespace"})
+	SecretCreationTime = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "vals_operator_secret_creation_time",
+			Help: "Time in ms it took to create the secret",
+		}, []string{"secret", "namespace"})
 )

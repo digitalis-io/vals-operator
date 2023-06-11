@@ -157,8 +157,11 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 	}
 
+	start := time.Now() // Get the current time
 	valsRendered, err := vals.Eval(secretYaml, vals.Options{})
+	elapsedPull := time.Since(start).Milliseconds() // Calculate the elapsed time
 	if err != nil {
+		dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 		r.Log.Error(err, "Failed to get secrets from secrets store", "name", secret.Name)
 		if r.recordingEnabled(&secret) {
 			msg := fmt.Sprintf("Failed to get secrets from secrets store %v", err)
@@ -167,6 +170,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 		return r.errorBackoff(&secret)
 	}
+	dmetrics.SecretRetrieveTime.WithLabelValues(secret.GetName(), secret.GetNamespace()).Set(float64(elapsedPull))
 
 	data := make(map[string][]byte)
 	dataStr := make(map[string]string)
@@ -174,7 +178,8 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if secret.Spec.Data[k].Encoding == "base64" && !strings.HasPrefix(secret.Spec.Data[k].Ref, k8sSecretPrefix) {
 			sDec, err := b64.StdEncoding.DecodeString(v.(string))
 			if err != nil {
-				r.Log.Error(err, "Cannot b64 decode secret. Please check encoding configuration. Requeuing.", "name", secret.Name)
+				dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
+				r.Log.Error(err, "Cannot b64 decode secret. Please check encoding configuration. Requeuing.", "name", secret.Name, "namespace", secret.Namespace)
 				if r.recordingEnabled(&secret) {
 					r.Recorder.Event(&secret, corev1.EventTypeNormal, "Failed", "Base64 decoding failed")
 				}
@@ -194,6 +199,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		b := bytes.NewBuffer(nil)
 		t, err := template.New(k).Funcs(sprig.FuncMap()).Parse(v)
 		if err != nil {
+			dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 			r.Log.Error(err, "Cannot parse template")
 			if r.recordingEnabled(&secret) {
 				msg := fmt.Sprintf("Template could not be parsed: %v", err)
@@ -202,6 +208,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			continue
 		}
 		if err := t.Execute(b, &dataStr); err != nil {
+			dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 			r.Log.Error(err, "Cannot render template")
 			if r.recordingEnabled(&secret) {
 				msg := fmt.Sprintf("Template could not be rendered: %v", err)
@@ -218,6 +225,9 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		r.Log.Error(err, "Failed to create secret")
 		return ctrl.Result{}, nil
 	}
+	elapsedProcess := time.Since(start).Milliseconds() // Calculate the elapsed time
+	dmetrics.SecretCreationTime.WithLabelValues(secret.GetName(), secret.GetNamespace()).Set(float64(elapsedProcess))
+	dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).Set(0)
 
 	r.clearErrorCount(&secret)
 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
