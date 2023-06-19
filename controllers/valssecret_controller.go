@@ -1,5 +1,5 @@
 /*
-Copyright 2022 Digitalis.IO.
+Copyright 2023 Digitalis.IO.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ import (
 	secretv1 "digitalis.io/vals-operator/apis/digitalis.io/v1"
 	valsDb "digitalis.io/vals-operator/db"
 	dbType "digitalis.io/vals-operator/db/types"
+	dmetrics "digitalis.io/vals-operator/metrics"
 	"digitalis.io/vals-operator/utils"
 	sprig "github.com/Masterminds/sprig/v3"
 )
@@ -120,6 +121,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 		// Stop reconciliation as the item is being deleted
 		r.Log.Info(fmt.Sprintf("Secret %s deleted", secret.Name))
+		dmetrics.SecretInfo.WithLabelValues(secret.Name, secret.Namespace).Set(0)
 		return ctrl.Result{}, nil
 	}
 	//! [finalizer]
@@ -155,8 +157,11 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 	}
 
+	start := time.Now() // Get the current time
 	valsRendered, err := vals.Eval(secretYaml, vals.Options{})
+	elapsedPull := time.Since(start).Milliseconds() // Calculate the elapsed time
 	if err != nil {
+		dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 		r.Log.Error(err, "Failed to get secrets from secrets store", "name", secret.Name)
 		if r.recordingEnabled(&secret) {
 			msg := fmt.Sprintf("Failed to get secrets from secrets store %v", err)
@@ -165,6 +170,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 		return r.errorBackoff(&secret)
 	}
+	dmetrics.SecretRetrieveTime.WithLabelValues(secret.GetName(), secret.GetNamespace()).Set(float64(elapsedPull))
 
 	data := make(map[string][]byte)
 	dataStr := make(map[string]string)
@@ -172,7 +178,8 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		if secret.Spec.Data[k].Encoding == "base64" && !strings.HasPrefix(secret.Spec.Data[k].Ref, k8sSecretPrefix) {
 			sDec, err := b64.StdEncoding.DecodeString(v.(string))
 			if err != nil {
-				r.Log.Error(err, "Cannot b64 decode secret. Please check encoding configuration. Requeuing.", "name", secret.Name)
+				dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
+				r.Log.Error(err, "Cannot b64 decode secret. Please check encoding configuration. Requeuing.", "name", secret.Name, "namespace", secret.Namespace)
 				if r.recordingEnabled(&secret) {
 					r.Recorder.Event(&secret, corev1.EventTypeNormal, "Failed", "Base64 decoding failed")
 				}
@@ -192,6 +199,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		b := bytes.NewBuffer(nil)
 		t, err := template.New(k).Funcs(sprig.FuncMap()).Parse(v)
 		if err != nil {
+			dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 			r.Log.Error(err, "Cannot parse template")
 			if r.recordingEnabled(&secret) {
 				msg := fmt.Sprintf("Template could not be parsed: %v", err)
@@ -200,6 +208,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			continue
 		}
 		if err := t.Execute(b, &dataStr); err != nil {
+			dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 			r.Log.Error(err, "Cannot render template")
 			if r.recordingEnabled(&secret) {
 				msg := fmt.Sprintf("Template could not be rendered: %v", err)
@@ -216,6 +225,9 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		r.Log.Error(err, "Failed to create secret")
 		return ctrl.Result{}, nil
 	}
+	elapsedProcess := time.Since(start).Milliseconds() // Calculate the elapsed time
+	dmetrics.SecretCreationTime.WithLabelValues(secret.GetName(), secret.GetNamespace()).Set(float64(elapsedProcess))
+	dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).Set(0)
 
 	r.clearErrorCount(&secret)
 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
@@ -300,10 +312,13 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 			msg := fmt.Sprintf("Secret %s not saved %v", secret.Name, err)
 			r.Recorder.Event(sDef, corev1.EventTypeNormal, "Failed", msg)
 		}
-		SecretFailures.Inc()
-		SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
+		dmetrics.SecretFailures.Inc()
+		dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 		return err
 	}
+
+	/* Prometheus */
+	dmetrics.SecretInfo.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 
 	if r.recordingEnabled(sDef) {
 		r.Recorder.Event(sDef, corev1.EventTypeNormal, "Updated", "Secret created or updated")

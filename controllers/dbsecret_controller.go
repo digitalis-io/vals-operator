@@ -1,5 +1,5 @@
 /*
-Copyright 2021 Digitalis.IO.
+Copyright 2023 Digitalis.IO.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -41,6 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	digitalisiov1beta1 "digitalis.io/vals-operator/apis/digitalis.io/v1beta1"
+	dmetrics "digitalis.io/vals-operator/metrics"
 	"digitalis.io/vals-operator/utils"
 	"digitalis.io/vals-operator/vault"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -125,6 +126,9 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			if err := r.Update(context.Background(), &dbSecret); err != nil {
 				return ctrl.Result{}, err
 			}
+			/* mark as deleted in prom */
+			dmetrics.DbSecretExpireTime.WithLabelValues(dbSecret.Name, dbSecret.Namespace).Set(0)
+			dmetrics.DbSecretInfo.WithLabelValues(dbSecret.Name, dbSecret.Namespace).Set(0)
 		}
 
 		// Stop reconciliation as the item is being deleted
@@ -199,18 +203,19 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	creds, err := vault.GetDbCredentials(dbSecret.Spec.Vault.Role, dbSecret.Spec.Vault.Mount)
 	if err != nil {
 		r.Log.Error(err, "Failed to obtain credentials from Vault", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
-		DbSecretFailures.Inc()
-		DbSecretError.WithLabelValues(dbSecret.Name, dbSecret.Namespace).SetToCurrentTime()
+		dmetrics.DbSecretFailures.Inc()
+		dmetrics.DbSecretError.WithLabelValues(dbSecret.Name, dbSecret.Namespace).SetToCurrentTime()
 		return ctrl.Result{}, err
 	}
 
 	err = r.upsertSecret(&dbSecret, creds, currentSecret)
 	if err != nil {
 		r.Log.Error(err, "Failed to create secret", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
-		DbSecretFailures.Inc()
-		DbSecretError.WithLabelValues(dbSecret.Name, dbSecret.Namespace).SetToCurrentTime()
+		dmetrics.DbSecretFailures.Inc()
+		dmetrics.DbSecretError.WithLabelValues(dbSecret.Name, dbSecret.Namespace).SetToCurrentTime()
 		return ctrl.Result{}, nil
 	}
+
 	/* Patching resources to force a rollout if required */
 	for target := range dbSecret.Spec.Rollout {
 		if dbSecret.Spec.Rollout[target].Name != "" && dbSecret.Spec.Rollout[target].Kind != "" {
@@ -375,6 +380,13 @@ func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, cre
 		}
 		return err
 	}
+	/* Prometheus */
+	f, err := strconv.ParseFloat(secret.Annotations[expiresOnLabel], 10)
+	if err != nil {
+		f = float64(time.Now().UnixNano())
+	}
+	dmetrics.DbSecretExpireTime.WithLabelValues(secret.Name, secret.Namespace).Set(f)
+	dmetrics.DbSecretInfo.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 
 	if r.recordingEnabled(sDef) {
 		r.Recorder.Event(sDef, corev1.EventTypeNormal, "Updated", "Secret created or updated")

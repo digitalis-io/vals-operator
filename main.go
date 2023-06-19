@@ -38,6 +38,7 @@ import (
 	secretv1 "digitalis.io/vals-operator/apis/digitalis.io/v1"
 	digitalisiov1beta1 "digitalis.io/vals-operator/apis/digitalis.io/v1beta1"
 	"digitalis.io/vals-operator/controllers"
+	dmetrics "digitalis.io/vals-operator/metrics"
 	"digitalis.io/vals-operator/vault"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	//+kubebuilder:scaffold:imports
@@ -56,7 +57,19 @@ func init() {
 	utilruntime.Must(secretv1.AddToScheme(scheme))
 	utilruntime.Must(digitalisiov1beta1.AddToScheme(scheme))
 
-	metrics.Registry.MustRegister(controllers.SecretFailures, controllers.DbSecretFailures, controllers.SecretError, controllers.DbSecretError)
+	metrics.Registry.MustRegister(
+		dmetrics.SecretFailures,
+		dmetrics.DbSecretFailures,
+		dmetrics.SecretError,
+		dmetrics.DbSecretError,
+		dmetrics.DbSecretExpireTime,
+		dmetrics.DbSecretInfo,
+		dmetrics.SecretInfo,
+		dmetrics.VaultError,
+		dmetrics.VaultTokenError,
+		dmetrics.SecretRetrieveTime,
+		dmetrics.SecretCreationTime,
+	)
 	//+kubebuilder:scaffold:scheme
 }
 

@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
+	dmetrics "digitalis.io/vals-operator/metrics"
 	"github.com/hashicorp/vault/api"
 	vault "github.com/hashicorp/vault/api"
 	vaultApprole "github.com/hashicorp/vault/api/auth/approle"
@@ -69,20 +71,25 @@ func tokenRenewer(client *vault.Client) {
 	for {
 		vaultLoginResp, err := login(client)
 		if err != nil {
+			dmetrics.VaultTokenError.WithLabelValues(vaultURL).SetToCurrentTime()
 			log.Error(err, "unable to authenticate to Vault")
 			return
 		}
 		err = os.Setenv("VAULT_TOKEN", vaultLoginResp.Auth.ClientToken)
 		if err != nil {
+			dmetrics.VaultTokenError.WithLabelValues(vaultURL).SetToCurrentTime()
 			log.Error(err, "Cannot set VAULT_TOKEN env variable")
 			return
 		}
 
 		tokenErr := manageTokenLifecycle(client, vaultLoginResp)
 		if tokenErr != nil {
+			dmetrics.VaultTokenError.WithLabelValues(vaultURL).SetToCurrentTime()
 			log.Error(err, "unable to start managing token lifecycle")
 			return
 		}
+		dmetrics.VaultTokenError.WithLabelValues(vaultURL).Set(0)
+		time.Sleep(60 * time.Second)
 	}
 }
 
@@ -320,6 +327,7 @@ func Start() error {
 
 	client, err = vaultClient()
 	if err != nil {
+		dmetrics.VaultError.WithLabelValues(vaultURL).SetToCurrentTime()
 		log.Error(err, "Error setting up vault client")
 		return err
 	}
@@ -329,6 +337,8 @@ func Start() error {
 	if vaultToken != "" {
 		return nil
 	}
+
+	dmetrics.VaultError.WithLabelValues(vaultURL).Set(0)
 
 	go tokenRenewer(client)
 

@@ -24,6 +24,7 @@ COPY vault/ vault
 COPY db/ db
 COPY utils/ utils
 COPY apis/ apis/
+COPY metrics/ metrics/
 
 # Build
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -ldflags "-X main.developmentMode=false -X main.gitVersion=${VERSION}" -a -o vals-operator main.go
