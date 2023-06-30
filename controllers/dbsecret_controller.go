@@ -248,7 +248,7 @@ func (r *DbSecretReconciler) revokeLease(sDef *digitalisiov1beta1.DbSecret, curr
 	return vault.RevokeDbCredentials(leaseId)
 }
 
-// renewLease will ask vault to renew the lease
+// isLeaseValid checks if there is a valid lease to be used for renewals
 func (r *DbSecretReconciler) isLeaseValid(sDef *digitalisiov1beta1.DbSecret, currentSecret *corev1.Secret) bool {
 	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
 		return false
