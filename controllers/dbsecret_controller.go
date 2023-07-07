@@ -113,17 +113,20 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			err := r.revokeLease(&dbSecret, currentSecret)
 			if err != nil {
 				// log the error but continue
-				r.Log.Error(err, "Lease cannot be revoked")
+				r.Log.Error(err, "Lease cannot be revoked", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
+				dmetrics.DbSecretRevokationError.WithLabelValues(dbSecret.Name, dbSecret.Namespace).SetToCurrentTime()
 			}
 			// our finalizer is present, so lets handle any external dependency
 			if err := r.deleteSecret(ctx, &dbSecret); err != nil {
-				r.Log.Error(err, "Error deleting from Vals-Secret", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
+				r.Log.Error(err, "Error deleting from database secret", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
+				dmetrics.DbSecretDeletionError.WithLabelValues(dbSecret.Name, dbSecret.Namespace).SetToCurrentTime()
 				return ctrl.Result{}, client.IgnoreNotFound(err)
 			}
 
 			// remove our finalizer from the list and update it.
 			dbSecret.SetFinalizers(utils.RemoveString(dbSecret.GetFinalizers(), valsDbSecretFinalizerName))
 			if err := r.Update(context.Background(), &dbSecret); err != nil {
+				dmetrics.DbSecretDeletionError.WithLabelValues(dbSecret.Name, dbSecret.Namespace).SetToCurrentTime()
 				return ctrl.Result{}, err
 			}
 			/* mark as deleted in prom */
@@ -236,10 +239,11 @@ func (r *DbSecretReconciler) revokeLease(sDef *digitalisiov1beta1.DbSecret, curr
 		return nil
 	}
 
-	r.Log.Info(fmt.Sprintf("Revoking lease for %s", currentSecret.Name))
+	r.Log.Info(fmt.Sprintf("Revoking lease for %s in namespace %s", currentSecret.Name, currentSecret.Namespace))
 
 	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
-		return fmt.Errorf("cannot revoke credentials without lease Id")
+		return fmt.Errorf("cannot revoke credentials without lease Id: secret %s in namespace %s",
+			currentSecret.Name, currentSecret.Namespace)
 	}
 	leaseId := fmt.Sprintf("%s/creds/%s/%s",
 		sDef.Spec.Vault.Mount,
