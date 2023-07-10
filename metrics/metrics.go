@@ -76,4 +76,14 @@ var (
 			Name: "vals_operator_secret_creation_time",
 			Help: "Time in ms it took to create the secret",
 		}, []string{"secret", "namespace"})
+	DbSecretRevokationError = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "vals_operator_dbsecret_revokation_error",
+			Help: "Timestamp of when the lease could not be revoked",
+		}, []string{"secret", "namespace"})
+	DbSecretDeletionError = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "vals_operator_dbsecret_deletion_error",
+			Help: "Timestamp of when the secret could not be deleted",
+		}, []string{"secret", "namespace"})
 )
