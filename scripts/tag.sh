@@ -23,6 +23,7 @@ if [[ $versionNumber =~ ^[0-9]+\.[0-9]+ ]]; then
     sed -i '' "s/version:.*/version: ${versionNumber}/g" charts/vals-operator/Chart.yaml
     sed -i '' "s/appVersion:.*/appVersion: ${tag}/g" charts/vals-operator/Chart.yaml
 
-    git commit -S -am "Tagging version ${versionNumber}" && git push && \
-    git tag $tag && git push --tags
+    branch=$(git rev-parse --abbrev-ref HEAD)
+    git commit -S -am "Tagging version ${versionNumber}" && git push -u origin $branch && \
+    git tag $tag && git push --tags -u origin $branch
 fi
