@@ -25,5 +25,5 @@ if [[ $versionNumber =~ ^[0-9]+\.[0-9]+ ]]; then
 
     branch=$(git rev-parse --abbrev-ref HEAD)
     git commit -S -am "Tagging version ${versionNumber}" && git push -u origin $branch && \
-    git tag $tag && git push --tags -u origin $branch
+    git tag $tag && git push --tags -u origin $tag
 fi
