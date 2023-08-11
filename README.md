@@ -11,7 +11,7 @@
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/digitalis-io/vals-operator)
 <a href="https://artifacthub.io/packages/helm/vals-operator/vals-operator"><img alt="Artifact Hub" src="https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/vals-operator" /></a>
 
-**External Secrets Operator** is a Kubernetes operator that integrates external
+**Vals-Operator** is a Kubernetes operator that integrates external
 
 Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/helmfile/vals), it's a tool we use daily to keep secrets stored securely. Inspired by it,
 we have created an operator to manage Kubernetes secrets. As [Digitalis](https://digitalis.io) and our sister company [AxonOps](https://axonops.com) are data companies,
