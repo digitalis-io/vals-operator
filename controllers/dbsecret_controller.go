@@ -492,6 +492,9 @@ func (r *DbSecretReconciler) rollout(sDef *digitalisiov1beta1.DbSecret, rolloutT
 			return err
 		}
 
+		if object.Spec.Template.Annotations == nil {
+			object.Spec.Template.Annotations = make(map[string]string)
+		}
 		object.Spec.Template.Annotations[restartedAnnotation] = time.Now().UTC().Format(timeLayout)
 		err = r.Update(r.Ctx, &object)
 		if err != nil {
