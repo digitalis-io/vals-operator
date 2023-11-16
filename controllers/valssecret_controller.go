@@ -21,12 +21,12 @@ import (
 	"context"
 	b64 "encoding/base64"
 	"fmt"
-	"html/template"
 	"math"
 	"math/rand"
 	"regexp"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/go-logr/logr"
