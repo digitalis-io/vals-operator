@@ -295,8 +295,10 @@ func GetDbCredentials(role string, mount string) (VaultDbSecret, error) {
 
 		hosts, _ = conn["hosts"].(string)
 		connectionURL, _ = conn["connection_url"].(string)
-		port = conn["port"].(json.Number).String()
-
+		_, ok = conn["port"]
+		if ok {
+			port = conn["port"].(json.Number).String()
+		}
 		if connectionURL != "" {
 			connectionURL = strings.Replace(connectionURL, "{{username}}", s.Data["username"].(string), 1)
 			connectionURL = strings.Replace(connectionURL, "{{password}}", s.Data["password"].(string), 1)
