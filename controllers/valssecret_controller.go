@@ -120,7 +120,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 
 		// Stop reconciliation as the item is being deleted
-		r.Log.Info(fmt.Sprintf("Secret %s deleted", secret.Name))
+		r.Log.Info(fmt.Sprintf("Secret %s/%s deleted", secret.Namespace, secret.Name))
 		dmetrics.SecretInfo.WithLabelValues(secret.Name, secret.Namespace).Set(0)
 		return ctrl.Result{}, nil
 	}
@@ -200,7 +200,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		t, err := template.New(k).Funcs(sprig.FuncMap()).Parse(v)
 		if err != nil {
 			dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
-			r.Log.Error(err, "Cannot parse template")
+			r.Log.Error(err, "Cannot parse template", "name", secret.Name, "namespace", secret.Namespace)
 			if r.recordingEnabled(&secret) {
 				msg := fmt.Sprintf("Template could not be parsed: %v", err)
 				r.Recorder.Event(&secret, corev1.EventTypeNormal, "Failed", msg)
@@ -209,7 +209,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 		if err := t.Execute(b, &dataStr); err != nil {
 			dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
-			r.Log.Error(err, "Cannot render template")
+			r.Log.Error(err, "Cannot render template", "name", secret.Name, "namespace", secret.Namespace)
 			if r.recordingEnabled(&secret) {
 				msg := fmt.Sprintf("Template could not be rendered: %v", err)
 				r.Recorder.Event(&secret, corev1.EventTypeNormal, "Failed", msg)
@@ -222,7 +222,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	err = r.upsertSecret(&secret, data)
 	if err != nil {
-		r.Log.Error(err, "Failed to create secret")
+		r.Log.Error(err, "Failed to create secret", "name", secret.Name, "namespace", secret.Namespace)
 		return ctrl.Result{}, nil
 	}
 	elapsedProcess := time.Since(start).Milliseconds() // Calculate the elapsed time
@@ -309,7 +309,7 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 
 	if err != nil {
 		if r.recordingEnabled(sDef) {
-			msg := fmt.Sprintf("Secret %s not saved %v", secret.Name, err)
+			msg := fmt.Sprintf("Secret %s/%s not saved %v", secret.Namespace, secret.Name, err)
 			r.Recorder.Event(sDef, corev1.EventTypeNormal, "Failed", msg)
 		}
 		dmetrics.SecretFailures.Inc()
@@ -323,7 +323,7 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 	if r.recordingEnabled(sDef) {
 		r.Recorder.Event(sDef, corev1.EventTypeNormal, "Updated", "Secret created or updated")
 	}
-	r.Log.Info("Updated secret", "name", secretName)
+	r.Log.Info("Updated secret", "name", secretName, "namespace", secret.Namespace)
 
 	if len(sDef.Spec.Databases) > 0 {
 		r.updateDatabases(sDef, secret)
@@ -376,7 +376,7 @@ func (r *ValsSecretReconciler) updateDatabases(sDef *secretv1.ValsSecret, secret
 				Port:          sDef.Spec.Databases[db].Port,
 			}
 			if err := valsDb.UpdateUserPassword(dbQuery); err != nil {
-				r.Log.Error(err, "Cannot update DB password")
+				r.Log.Error(err, "Cannot update DB password", "name", secret.Name, "namespace", secret.Namespace)
 				if r.recordingEnabled(sDef) {
 					r.Recorder.Event(sDef, corev1.EventTypeNormal, "Failed", "Cannot update database password")
 				}
@@ -430,7 +430,7 @@ func (r *ValsSecretReconciler) getKeyFromK8sSecret(secretRef string) (string, er
 	matchMap := utils.FindAllGroups(re, secretRef)
 
 	if !utils.K8sSecretFound(matchMap) {
-		return "", fmt.Errorf("The ref+k8s secret '%s' did not match the regular expression for ref+k8s://namespace/secret-name#key", secretRef)
+		return "", fmt.Errorf("the ref+k8s secret '%s' did not match the regular expression for ref+k8s://namespace/secret-name#key", secretRef)
 	}
 	secret, err := r.getSecret(matchMap["secretName"], matchMap["namespace"])
 	if err != nil {
