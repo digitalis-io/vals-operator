@@ -120,7 +120,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 
 		// Stop reconciliation as the item is being deleted
-		r.Log.Info(fmt.Sprintf("Secret %s/%s deleted", secret.Name, secret.Namespace))
+		r.Log.Info(fmt.Sprintf("Secret %s/%s deleted", secret.Namespace, secret.Name))
 		dmetrics.SecretInfo.WithLabelValues(secret.Name, secret.Namespace).Set(0)
 		return ctrl.Result{}, nil
 	}
