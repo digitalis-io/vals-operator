@@ -9,23 +9,25 @@ jobs:
   pre-commit:
     # Run the test inside a centos8 container
     runs-on: ubuntu-latest
-    container: golang:buster
+    container: golang:1.22.5-bookworm
     steps:
 
       # Make pip3 work
       - name: Install Dependencies apt
         run: |
           apt update && \
-          apt-get install -y python3 python3-pip python3-setuptools git wget python3-yaml
+          apt-get install -y python3 python3-pip python3-setuptools git wget python3-yaml python3-venv
 
       - uses: actions/checkout@v2
 
       # Install requirements and latest ansible
       - name: Install Dependencies pip
         run: |
-          pip3 install pre-commit
+          python3 -m venv ~/.venvs/vals
+          ~/.venvs/vals/bin/pip3 install pre-commit
+
       # Validate all files in the repo
       - name: Run pre-commit
         run: |
           git config --global --add safe.directory /__w/vals-operator/vals-operator
-          pre-commit run --all-files -v || (cat /github/home/.cache/pre-commit/pre-commit.log && exit 1)
+          ~/.venvs/vals/bin/pre-commit run --all-files -v || (cat /github/home/.cache/pre-commit/pre-commit.log && exit 1)
