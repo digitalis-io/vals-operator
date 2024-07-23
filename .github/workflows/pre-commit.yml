@@ -9,7 +9,7 @@ jobs:
   pre-commit:
     # Run the test inside a centos8 container
     runs-on: ubuntu-latest
-    container: golang:buster
+    container: golang:1.22.5-bookworm
     steps:
 
       # Make pip3 work
