@@ -16,16 +16,19 @@ jobs:
       - name: Install Dependencies apt
         run: |
           apt update && \
-          apt-get install -y python3 python3-pip python3-setuptools git wget python3-yaml
+          apt-get install -y python3 python3-pip python3-setuptools git wget python3-yaml python3-venv
 
       - uses: actions/checkout@v2
 
       # Install requirements and latest ansible
       - name: Install Dependencies pip
         run: |
+          python3 -m venv ~/.venvs/vals
+          source ~/.venvs/vals/bin/activate
           pip3 install pre-commit
       # Validate all files in the repo
       - name: Run pre-commit
         run: |
+          source ~/.venvs/vals/bin/activate
           git config --global --add safe.directory /__w/vals-operator/vals-operator
           pre-commit run --all-files -v || (cat /github/home/.cache/pre-commit/pre-commit.log && exit 1)
