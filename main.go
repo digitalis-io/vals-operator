@@ -32,6 +32,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -128,6 +129,32 @@ func main() {
 		}
 	}
 
+	var cacheOptions cache.Options
+	if watchNamespaces != "" {
+		setupLog.Info("watching namespaces", "namespaces", watchNamespaces)
+
+		// Split the watchNamespaces string into a slice of namespaces
+		namespaces := strings.Split(watchNamespaces, ",")
+
+		// Create a map to hold namespace configurations
+		namespaceConfigs := make(map[string]cache.Config)
+
+		// Add each namespace to the map
+		for _, ns := range namespaces {
+			// Trim any whitespace from the namespace
+			ns = strings.TrimSpace(ns)
+			if ns != "" {
+				namespaceConfigs[ns] = cache.Config{}
+			}
+		}
+
+		// Set the cache options with the namespace configurations
+		cacheOptions = cache.Options{
+			DefaultNamespaces: namespaceConfigs,
+		}
+
+		setupLog.Info("configured cache for namespaces", "count", len(namespaceConfigs))
+	}
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
@@ -137,6 +164,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "6d6f94cf.digitalis.io",
+		Cache:                  cacheOptions,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start vals-operator")
