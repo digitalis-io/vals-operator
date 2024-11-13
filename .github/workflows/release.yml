@@ -15,8 +15,8 @@ jobs:
       - name: Check out the repo
         uses: actions/checkout@v3
 
-      - name: Setup mirror
-        uses: self-actuated/hub-mirror@master
+      # - name: Setup mirror
+      #   uses: self-actuated/hub-mirror@master
 
       - name: Get TAG
         id: get_tag

@@ -16,7 +16,7 @@ kubeVersion: ">= 1.19.0-0"
 type: application
 
 # Chart version
-version: 0.7.11
+version: 0.7.11-beta1
 
 # Latest container tag
 appVersion: v0.7.11-beta1
