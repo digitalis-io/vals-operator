@@ -2,38 +2,12 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  creationTimestamp: null
   name: manager-role
 rules:
 - apiGroups:
   - digitalis.io
   resources:
   - dbsecrets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - digitalis.io
-  resources:
-  - dbsecrets/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - digitalis.io
-  resources:
-  - dbsecrets/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - digitalis.io
-  resources:
   - valssecrets
   verbs:
   - create
@@ -46,12 +20,14 @@ rules:
 - apiGroups:
   - digitalis.io
   resources:
+  - dbsecrets/finalizers
   - valssecrets/finalizers
   verbs:
   - update
 - apiGroups:
   - digitalis.io
   resources:
+  - dbsecrets/status
   - valssecrets/status
   verbs:
   - get
