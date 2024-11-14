@@ -32,8 +32,10 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/helmfile/vals"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 
+	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -229,6 +231,18 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	dmetrics.SecretCreationTime.WithLabelValues(secret.GetName(), secret.GetNamespace()).Set(float64(elapsedProcess))
 	dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).Set(0)
 
+	/* Patching resources to force a rollout if required */
+	for target := range secret.Spec.Rollout {
+		if secret.Spec.Rollout[target].Name != "" && secret.Spec.Rollout[target].Kind != "" {
+			if err := r.rollout(&secret, secret.Spec.Rollout[target]); err != nil {
+				r.Log.Error(err, "Could not perform rollout",
+					"name", secret.Name,
+					"namespace", secret.Namespace,
+					"kind", secret.Spec.Rollout[target].Kind,
+					"name", secret.Spec.Rollout[target].Name)
+			}
+		}
+	}
 	r.clearErrorCount(&secret)
 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
 }
@@ -512,4 +526,57 @@ func (r *ValsSecretReconciler) clearErrorCount(valsSecret *secretv1.ValsSecret) 
 		return
 	}
 	delete(r.errorCounts, errKey)
+}
+
+// rollout is used to restart the Deployment or StatefulSet
+func (r *ValsSecretReconciler) rollout(sDef *secretv1.ValsSecret, rolloutTarget secretv1.RolloutTarget) error {
+	var err error
+
+	clientObject := types.NamespacedName{
+		Namespace: sDef.Namespace,
+		Name:      rolloutTarget.Name,
+	}
+	r.Log.Info(fmt.Sprintf("Rolling restart %s/%s in namespace %s", rolloutTarget.Kind, rolloutTarget.Name, sDef.Namespace))
+
+	if strings.ToLower(rolloutTarget.Kind) == "deployment" {
+		var object v1.Deployment
+		err = r.Get(r.Ctx, clientObject, &object)
+		if errors.IsNotFound(err) {
+			msg := fmt.Sprintf("%s/%s in namespace %s not found", rolloutTarget.Kind, rolloutTarget.Name, sDef.Namespace)
+			r.Log.Error(err, msg)
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		if object.Spec.Template.Annotations == nil {
+			object.Spec.Template.Annotations = make(map[string]string)
+		}
+		object.Spec.Template.Annotations[restartedAnnotation] = time.Now().UTC().Format(timeLayout)
+		err = r.Update(r.Ctx, &object)
+		if err != nil {
+			return err
+		}
+	} else if strings.ToLower(rolloutTarget.Kind) == "statefulset" {
+		var object v1.StatefulSet
+		err = r.Get(r.Ctx, clientObject, &object)
+		if errors.IsNotFound(err) {
+			r.Log.Error(err, fmt.Sprintf("%s/%s in namespace %s not found", rolloutTarget.Kind, rolloutTarget.Name, sDef.Namespace))
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		object.Spec.Template.Annotations[restartedAnnotation] = time.Now().UTC().Format(timeLayout)
+		err = r.Update(r.Ctx, &object)
+		if err != nil {
+			return err
+		}
+	} else {
+		return fmt.Errorf("%s kind is not supported", rolloutTarget.Kind)
+	}
+
+	return nil
 }

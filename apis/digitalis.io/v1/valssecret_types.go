@@ -70,6 +70,15 @@ type ValsSecretSpec struct {
 	Type      string                `json:"type,omitempty"`
 	Databases []Database            `json:"databases,omitempty"`
 	Template  map[string]string     `json:"template,omitempty"`
+	Rollout   []RolloutTarget       `json:"rollout,omitempty"`
+}
+
+// RolloutTarget sets up what deployment or sts to restart
+type RolloutTarget struct {
+	// Kind is either Deployment, Pod or StatefulSet
+	Kind string `json:"kind"`
+	// Name is the object name
+	Name string `json:"name"`
 }
 
 // ValsSecretStatus defines the observed state of ValsSecret

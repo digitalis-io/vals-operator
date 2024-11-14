@@ -93,7 +93,7 @@ metadata:
     owner: digitalis.io
 spec:
   name: my-secret # Optional, default is the resource name
-  ttl: 3600       # Optional, default is 0. The secret will be checked at every "reconcile period". See below.
+  ttl: 3600       # Optional, default is 5 minutes. The secret will be checked at every "reconcile period". See below.
   type: Opaque    # Default type, others supported
   data:
     username:
@@ -121,6 +121,9 @@ spec:
       {{- if .url }}
       url: {{ .url | lower }}
       {{ end }}
+  rollout: # optional: run a `rollout` to make the pods use new secret
+    - kind: Deployment
+      name: myapp
 ```
 
 The example above will create a secret named `my-secret` and get the values from the different sources. The secret will be kept in sync against the backed secrets store.

@@ -129,6 +129,7 @@ func main() {
 		}
 	}
 
+	setupLog.Info("The backends will be checked every " + defaultTTL.String())
 	var cacheOptions cache.Options
 	if watchNamespaces != "" {
 		setupLog.Info("watching namespaces", "namespaces", watchNamespaces)
