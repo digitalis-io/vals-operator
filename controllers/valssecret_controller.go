@@ -222,24 +222,27 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		data[k] = b.Bytes()
 	}
 
-	err = r.upsertSecret(&secret, data)
+	updated, err := r.upsertSecret(&secret, data)
 	if err != nil {
 		r.Log.Error(err, "Failed to create secret", "name", secret.Name, "namespace", secret.Namespace)
 		return ctrl.Result{}, nil
 	}
+
 	elapsedProcess := time.Since(start).Milliseconds() // Calculate the elapsed time
 	dmetrics.SecretCreationTime.WithLabelValues(secret.GetName(), secret.GetNamespace()).Set(float64(elapsedProcess))
 	dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).Set(0)
 
 	/* Patching resources to force a rollout if required */
-	for target := range secret.Spec.Rollout {
-		if secret.Spec.Rollout[target].Name != "" && secret.Spec.Rollout[target].Kind != "" {
-			if err := r.rollout(&secret, secret.Spec.Rollout[target]); err != nil {
-				r.Log.Error(err, "Could not perform rollout",
-					"name", secret.Name,
-					"namespace", secret.Namespace,
-					"kind", secret.Spec.Rollout[target].Kind,
-					"name", secret.Spec.Rollout[target].Name)
+	if updated {
+		for target := range secret.Spec.Rollout {
+			if secret.Spec.Rollout[target].Name != "" && secret.Spec.Rollout[target].Kind != "" {
+				if err := r.rollout(&secret, secret.Spec.Rollout[target]); err != nil {
+					r.Log.Error(err, "Could not perform rollout",
+						"name", secret.Name,
+						"namespace", secret.Namespace,
+						"kind", secret.Spec.Rollout[target].Kind,
+						"name", secret.Spec.Rollout[target].Name)
+				}
 			}
 		}
 	}
@@ -269,8 +272,8 @@ func (r *ValsSecretReconciler) shouldExclude(sDefNamespace string) bool {
 	return false
 }
 
-// upsertSecret will create or update a secret
-func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[string][]byte) error {
+// upsertSecret will create or update a secret. Returns boolean is update or error
+func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[string][]byte) (bool, error) {
 	var secretName string
 	if sDef.Spec.Name != "" {
 		secretName = sDef.Spec.Name
@@ -280,7 +283,7 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 	secret, err := r.getSecret(secretName, sDef.GetNamespace())
 	if err != nil {
 		if client.IgnoreNotFound(err) != nil {
-			return err
+			return false, err
 		}
 		// secret not found, create a new empty one
 		secret = &corev1.Secret{}
@@ -288,7 +291,7 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 
 	// Do nothing if the secret does not need updating
 	if !r.secretNeedsUpdate(sDef, secret, data) {
-		return nil
+		return false, nil
 	}
 
 	if sDef.Spec.Name != "" {
@@ -314,7 +317,7 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 	secret.ResourceVersion = ""
 
 	if err = controllerutil.SetControllerReference(sDef, secret, r.Scheme()); err != nil {
-		return err
+		return false, err
 	}
 	err = r.Create(r.Ctx, secret)
 	if errors.IsAlreadyExists(err) {
@@ -328,7 +331,7 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 		}
 		dmetrics.SecretFailures.Inc()
 		dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
-		return err
+		return false, err
 	}
 
 	/* Prometheus */
@@ -343,7 +346,7 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 		r.updateDatabases(sDef, secret)
 	} // end DB section
 
-	return err
+	return true, err
 }
 
 func (r *ValsSecretReconciler) updateDatabases(sDef *secretv1.ValsSecret, secret *corev1.Secret) {
