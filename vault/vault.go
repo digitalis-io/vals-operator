@@ -177,14 +177,14 @@ func tokenRenewer(client *vault.Client) {
 		// Update the token and client
 		setCurrentToken(vaultLoginResp.Auth.ClientToken)
 
-		tokenErr := manageTokenLifecycle(client, vaultLoginResp)
-		if tokenErr != nil {
+		err = manageTokenLifecycle(client, vaultLoginResp)
+		if err != nil {
 			dmetrics.VaultTokenError.WithLabelValues(vaultURL).SetToCurrentTime()
 			backoffDuration := backoff.NextBackoff()
-			log.Error(tokenErr, "unable to start managing token lifecycle", "backoff", backoffDuration, "attemptCount", backoff.AttemptCount())
+			log.Error(err, "unable to start managing token lifecycle", "backoff", backoffDuration, "attemptCount", backoff.AttemptCount())
 			// On error, force client refresh on next use
-			if refreshErr := refreshClient(); refreshErr != nil {
-				log.Error(refreshErr, "Failed to refresh client after token lifecycle error")
+			if err := refreshClient(); err != nil {
+				log.Error(err, "Failed to refresh client after token lifecycle error")
 			}
 			time.Sleep(backoffDuration)
 			continue
@@ -195,8 +195,8 @@ func tokenRenewer(client *vault.Client) {
 		backoff.Reset()
 
 		// Force client refresh after token lifecycle ends
-		if refreshErr := refreshClient(); refreshErr != nil {
-			log.Error(refreshErr, "Failed to refresh client after token lifecycle completion")
+		if err := refreshClient(); err != nil {
+			log.Error(err, "Failed to refresh client after token lifecycle completion")
 		}
 
 		// Wait a bit before attempting to re-authentication
@@ -249,9 +249,9 @@ func executeWithRetry[T any](operation func(*vault.Client) (T, error)) (T, error
 	var err error
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		c, clientErr := getOrCreateClient()
-		if clientErr != nil {
-			return result, clientErr
+		c, err := getOrCreateClient()
+		if err != nil {
+			return result, err
 		}
 
 		result, err = operation(c)
@@ -264,8 +264,8 @@ func executeWithRetry[T any](operation func(*vault.Client) (T, error)) (T, error
 			log.Info("Got 403 error, refreshing client", "attempt", attempt+1)
 
 			// Force client refresh
-			if refreshErr := refreshClient(); refreshErr != nil {
-				log.Error(refreshErr, "Failed to refresh client")
+			if err := refreshClient(); err != nil {
+				log.Error(err, "Failed to refresh client")
 			}
 
 			// Wait before retry
