@@ -12,6 +12,7 @@ import (
 	"time"
 
 	dmetrics "digitalis.io/vals-operator/metrics"
+	"digitalis.io/vals-operator/utils"
 	"github.com/hashicorp/vault/api"
 	vault "github.com/hashicorp/vault/api"
 	vaultApprole "github.com/hashicorp/vault/api/auth/approle"
@@ -31,12 +32,12 @@ const (
 )
 
 var (
-	log            logr.Logger
-	vaultURL       string = getEnv("VAULT_ADDR", "http://vault:8200")
-	client         *vault.Client
-	clientMutex    sync.RWMutex
-	currentToken   string
-	tokenMutex     sync.RWMutex
+	log          logr.Logger
+	vaultURL     string = getEnv("VAULT_ADDR", "http://vault:8200")
+	client       *vault.Client
+	clientMutex  sync.RWMutex
+	currentToken string
+	tokenMutex   sync.RWMutex
 )
 
 func getEnv(key string, fallback string) string {
@@ -47,25 +48,19 @@ func getEnv(key string, fallback string) string {
 }
 
 // setCurrentToken safely updates the current token
-func setCurrentToken(token string) error {
+func setCurrentToken(token string) {
 	tokenMutex.Lock()
 	defer tokenMutex.Unlock()
-	
+
 	currentToken = token
-	err := os.Setenv("VAULT_TOKEN", token)
-	if err != nil {
-		return fmt.Errorf("cannot set VAULT_TOKEN env variable: %w", err)
-	}
-	
+
 	// Update the client with the new token
 	clientMutex.Lock()
 	defer clientMutex.Unlock()
-	
+
 	if client != nil {
 		client.SetToken(token)
 	}
-	
-	return nil
 }
 
 // getCurrentToken safely retrieves the current token
@@ -87,17 +82,17 @@ func getOrCreateClient() (*vault.Client, error) {
 	// Need to create client
 	clientMutex.Lock()
 	defer clientMutex.Unlock()
-	
+
 	// Double-check after acquiring write lock
 	if client != nil {
 		return client, nil
 	}
-	
+
 	newClient, err := createVaultClient()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	client = newClient
 	return client, nil
 }
@@ -124,7 +119,7 @@ func createVaultClient() (*api.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Set the current token if available
 	token := getCurrentToken()
 	if token == "" {
@@ -133,7 +128,7 @@ func createVaultClient() (*api.Client, error) {
 	if token != "" {
 		newClient.SetToken(token)
 	}
-	
+
 	return newClient, nil
 }
 
@@ -141,12 +136,12 @@ func createVaultClient() (*api.Client, error) {
 func refreshClient() error {
 	clientMutex.Lock()
 	defer clientMutex.Unlock()
-	
+
 	newClient, err := createVaultClient()
 	if err != nil {
 		return err
 	}
-	
+
 	client = newClient
 	return nil
 }
@@ -161,40 +156,48 @@ func tokenRenewer(client *vault.Client) {
 		login = loginAppRole
 	}
 
+	// Initialize exponential backoff
+	backoff := utils.NewExponentialBackoff(
+		5*time.Second,  // initial backoff
+		60*time.Second, // max backoff
+		2.0,            // multiplier
+		0,              // no max attempts (infinite)
+	)
+
 	for {
 		vaultLoginResp, err := login(client)
 		if err != nil {
 			dmetrics.VaultTokenError.WithLabelValues(vaultURL).SetToCurrentTime()
-			log.Error(err, "unable to authenticate to Vault")
-			time.Sleep(60 * time.Second)
+			backoffDuration := backoff.NextBackoff()
+			log.Error(err, "unable to authenticate to Vault", "backoff", backoffDuration, "attemptCount", backoff.AttemptCount())
+			time.Sleep(backoffDuration)
 			continue
 		}
-		
+
 		// Update the token and client
-		err = setCurrentToken(vaultLoginResp.Auth.ClientToken)
-		if err != nil {
-			dmetrics.VaultTokenError.WithLabelValues(vaultURL).SetToCurrentTime()
-			log.Error(err, "Cannot update token")
-			time.Sleep(60 * time.Second)
-			continue
-		}
+		setCurrentToken(vaultLoginResp.Auth.ClientToken)
 
 		tokenErr := manageTokenLifecycle(client, vaultLoginResp)
 		if tokenErr != nil {
 			dmetrics.VaultTokenError.WithLabelValues(vaultURL).SetToCurrentTime()
-			log.Error(tokenErr, "unable to start managing token lifecycle")
+			backoffDuration := backoff.NextBackoff()
+			log.Error(tokenErr, "unable to start managing token lifecycle", "backoff", backoffDuration, "attemptCount", backoff.AttemptCount())
 			// On error, force client refresh on next use
 			refreshClient()
-			time.Sleep(60 * time.Second)
+			time.Sleep(backoffDuration)
 			continue
 		}
-		
+
+		// Success - reset backoff
 		dmetrics.VaultTokenError.WithLabelValues(vaultURL).Set(0)
-		
+		backoff.Reset()
+
 		// Force client refresh after token lifecycle ends
 		refreshClient()
-		
-		time.Sleep(60 * time.Second)
+
+		// Wait a bit before attempting to re-authentication
+		log.Info("Token lifecycle ended, waiting before re-authentication", "delay", "5s")
+		time.Sleep(5 * time.Second)
 	}
 }
 
@@ -231,10 +234,7 @@ func manageTokenLifecycle(client *vault.Client, token *vault.Secret) error {
 		// Successfully completed renewal
 		case renewal := <-watcher.RenewCh():
 			log.Info("Successfully renewed vault token")
-			err = setCurrentToken(renewal.Secret.Auth.ClientToken)
-			if err != nil {
-				return err
-			}
+			setCurrentToken(renewal.Secret.Auth.ClientToken)
 		}
 	}
 }
@@ -243,38 +243,38 @@ func manageTokenLifecycle(client *vault.Client, token *vault.Secret) error {
 func executeWithRetry[T any](operation func(*vault.Client) (T, error)) (T, error) {
 	var result T
 	var err error
-	
+
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		c, clientErr := getOrCreateClient()
 		if clientErr != nil {
 			return result, clientErr
 		}
-		
+
 		result, err = operation(c)
 		if err == nil {
 			return result, nil
 		}
-		
+
 		// Check if this is an authentication error
 		if strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "permission denied") {
 			log.Info("Got 403 error, refreshing client", "attempt", attempt+1)
-			
+
 			// Force client refresh
 			if refreshErr := refreshClient(); refreshErr != nil {
 				log.Error(refreshErr, "Failed to refresh client")
 			}
-			
+
 			// Wait before retry
 			if attempt < maxRetries-1 {
 				time.Sleep(retryDelay)
 			}
 			continue
 		}
-		
+
 		// Non-auth error, return immediately
 		return result, err
 	}
-	
+
 	return result, fmt.Errorf("operation failed after %d retries: %w", maxRetries, err)
 }
 
@@ -371,11 +371,11 @@ func IsLeaseValid(leaseId string) bool {
 	if leaseId == "" {
 		return false
 	}
-	
+
 	_, err := executeWithRetry(func(c *vault.Client) (interface{}, error) {
 		return c.Sys().Lookup(leaseId)
 	})
-	
+
 	return err == nil
 }
 
@@ -383,43 +383,43 @@ func RevokeDbCredentials(leaseId string) error {
 	if leaseId == "" {
 		return fmt.Errorf("missing lease id")
 	}
-	
+
 	_, err := executeWithRetry(func(c *vault.Client) (interface{}, error) {
 		return nil, c.Sys().Revoke(leaseId)
 	})
-	
+
 	return err
 }
 
 func GetDbCredentials(role string, mount string) (VaultDbSecret, error) {
 	var dbSecret VaultDbSecret
-	
+
 	path := fmt.Sprintf("%s/creds/%s", mount, role)
-	
+
 	s, err := executeWithRetry(func(c *vault.Client) (*vault.Secret, error) {
 		return c.Logical().Read(path)
 	})
-	
+
 	if err != nil {
 		return dbSecret, err
 	}
-	
+
 	if s == nil ||
 		s.Data["username"] == "" || s.Data["password"] == "" ||
 		s.Data["username"] == nil || s.Data["password"] == nil {
 		return dbSecret, fmt.Errorf("vault did not return credentials")
 	}
-	
+
 	/* Get connection URL or hosts list */
 	var connectionURL string
 	var hosts string
 	var port string
 	path = fmt.Sprintf("%s/config/%s", mount, mount)
-	
+
 	cfg, err2 := executeWithRetry(func(c *vault.Client) (*vault.Secret, error) {
 		return c.Logical().Read(path)
 	})
-	
+
 	if err2 != nil {
 		log.Info("Could not get access details for the database", err2)
 	} else {
@@ -482,17 +482,17 @@ func Start() error {
 	if vaultToken != "" {
 		// For token-only auth, we should still try to renew if possible
 		log.Info("Using token-only authentication, attempting to set up renewal")
-		
+
 		// Set the current token
 		setCurrentToken(vaultToken)
-		
+
 		// Try to look up the token to see if it's renewable
 		tokenInfo, err := c.Auth().Token().LookupSelf()
 		if err != nil {
 			log.Error(err, "Failed to lookup token info, renewal will not be available")
 			return nil
 		}
-		
+
 		// Check if token is renewable
 		renewable, ok := tokenInfo.Data["renewable"].(bool)
 		if ok && renewable {
@@ -501,7 +501,7 @@ func Start() error {
 		} else {
 			log.Info("Token is not renewable, no automatic renewal will occur")
 		}
-		
+
 		return nil
 	}
 
