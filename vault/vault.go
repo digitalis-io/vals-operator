@@ -183,7 +183,9 @@ func tokenRenewer(client *vault.Client) {
 			backoffDuration := backoff.NextBackoff()
 			log.Error(tokenErr, "unable to start managing token lifecycle", "backoff", backoffDuration, "attemptCount", backoff.AttemptCount())
 			// On error, force client refresh on next use
-			refreshClient()
+			if refreshErr := refreshClient(); refreshErr != nil {
+				log.Error(refreshErr, "Failed to refresh client after token lifecycle error")
+			}
 			time.Sleep(backoffDuration)
 			continue
 		}
@@ -193,7 +195,9 @@ func tokenRenewer(client *vault.Client) {
 		backoff.Reset()
 
 		// Force client refresh after token lifecycle ends
-		refreshClient()
+		if refreshErr := refreshClient(); refreshErr != nil {
+			log.Error(refreshErr, "Failed to refresh client after token lifecycle completion")
+		}
 
 		// Wait a bit before attempting to re-authentication
 		log.Info("Token lifecycle ended, waiting before re-authentication", "delay", "5s")
