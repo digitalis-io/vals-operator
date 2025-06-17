@@ -386,7 +386,9 @@ func TestIntegration403ErrorRecovery(t *testing.T) {
 	t.Logf("Initial valid token: %s...", validToken[:8])
 
 	// Corrupt the token to simulate 403 error
-	setCurrentToken("invalid-token-that-will-cause-403")
+	if err := setCurrentToken("invalid-token-that-will-cause-403"); err != nil {
+		t.Fatalf("Failed to set invalid token: %v", err)
+	}
 
 	// Force client to use the invalid token
 	if err := refreshClient(); err != nil {

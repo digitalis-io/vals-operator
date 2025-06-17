@@ -48,11 +48,16 @@ func getEnv(key string, fallback string) string {
 }
 
 // setCurrentToken safely updates the current token
-func setCurrentToken(token string) {
+func setCurrentToken(token string) error {
 	tokenMutex.Lock()
 	defer tokenMutex.Unlock()
 
 	currentToken = token
+
+	// Set environment variable for child processes
+	if err := os.Setenv("VAULT_TOKEN", token); err != nil {
+		return fmt.Errorf("failed to set VAULT_TOKEN environment variable: %w", err)
+	}
 
 	// Update the client with the new token
 	clientMutex.Lock()
@@ -61,6 +66,8 @@ func setCurrentToken(token string) {
 	if client != nil {
 		client.SetToken(token)
 	}
+
+	return nil
 }
 
 // getCurrentToken safely retrieves the current token
@@ -204,7 +211,10 @@ func tokenRenewer(client *vault.Client) {
 		}
 
 		// Update the token and client
-		setCurrentToken(vaultLoginResp.Auth.ClientToken)
+		if err := setCurrentToken(vaultLoginResp.Auth.ClientToken); err != nil {
+			log.Error(err, "Failed to set current token")
+			continue
+		}
 
 		err = manageTokenLifecycle(client, vaultLoginResp)
 		if err != nil {
@@ -267,7 +277,10 @@ func manageTokenLifecycle(client *vault.Client, token *vault.Secret) error {
 		// Successfully completed renewal
 		case renewal := <-watcher.RenewCh():
 			log.Info("Successfully renewed vault token")
-			setCurrentToken(renewal.Secret.Auth.ClientToken)
+			if err := setCurrentToken(renewal.Secret.Auth.ClientToken); err != nil {
+				log.Error(err, "Failed to set renewed token")
+				return err
+			}
 		}
 	}
 }
@@ -517,7 +530,10 @@ func Start() error {
 		log.Info("Using token-only authentication, attempting to set up renewal")
 
 		// Set the current token
-		setCurrentToken(vaultToken)
+		if err := setCurrentToken(vaultToken); err != nil {
+			log.Error(err, "Failed to set token-only token")
+			return fmt.Errorf("failed to set token: %w", err)
+		}
 
 		// Try to look up the token to see if it's renewable
 		tokenInfo, err := c.Auth().Token().LookupSelf()
@@ -558,7 +574,10 @@ func Start() error {
 	}
 
 	// Set the initial token
-	setCurrentToken(vaultLoginResp.Auth.ClientToken)
+	if err := setCurrentToken(vaultLoginResp.Auth.ClientToken); err != nil {
+		log.Error(err, "Failed to set initial token")
+		return fmt.Errorf("failed to set initial token: %w", err)
+	}
 	log.Info("Initial Vault authentication successful")
 
 	dmetrics.VaultError.WithLabelValues(vaultURL).Set(0)

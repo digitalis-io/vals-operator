@@ -309,7 +309,9 @@ func TestTokenLifecycleManagement(t *testing.T) {
 			LeaseDuration: 30,
 		},
 	}
-	setCurrentToken(mockServer.currentToken)
+	if err := setCurrentToken(mockServer.currentToken); err != nil {
+		t.Fatalf("Failed to set current token: %v", err)
+	}
 
 	// Run lifecycle management in background with short timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -346,7 +348,9 @@ func TestExecuteWithRetry403Errors(t *testing.T) {
 
 	vaultURL = mockServer.URL
 	client = nil
-	setCurrentToken("valid-token")
+	if err := setCurrentToken("valid-token"); err != nil {
+		t.Fatalf("Failed to set current token: %v", err)
+	}
 
 	// Test successful operation
 	result, err := executeWithRetry(func(c *api.Client) (string, error) {
@@ -416,7 +420,9 @@ func TestGetDbCredentials(t *testing.T) {
 
 	vaultURL = mockServer.URL
 	client = nil
-	setCurrentToken(mockServer.currentToken) // Use the mock's current token
+	if err := setCurrentToken(mockServer.currentToken); err != nil { // Use the mock's current token
+		t.Fatalf("Failed to set current token: %v", err)
+	}
 
 	// Test successful credential retrieval
 	creds, err := GetDbCredentials("test-role", "database")
@@ -468,7 +474,9 @@ func TestLeaseOperations(t *testing.T) {
 
 	vaultURL = mockServer.URL
 	client = nil
-	setCurrentToken(mockServer.currentToken) // Use the mock's current token
+	if err := setCurrentToken(mockServer.currentToken); err != nil { // Use the mock's current token
+		t.Fatalf("Failed to set current token: %v", err)
+	}
 
 	// Test lease validation
 	valid := IsLeaseValid("database/creds/test-role/test-lease")
@@ -578,7 +586,9 @@ func TestTokenSetAndGet(t *testing.T) {
 	}()
 
 	// Test setting and getting token
-	setCurrentToken("test-token-123")
+	if err := setCurrentToken("test-token-123"); err != nil {
+		t.Fatalf("Failed to set test token: %v", err)
+	}
 	if getCurrentToken() != "test-token-123" {
 		t.Errorf("Expected 'test-token-123', got %s", getCurrentToken())
 	}
@@ -589,7 +599,9 @@ func TestTokenSetAndGet(t *testing.T) {
 		wg.Add(2)
 		go func(idx int) {
 			defer wg.Done()
-			setCurrentToken(fmt.Sprintf("token-%d", idx))
+			if err := setCurrentToken(fmt.Sprintf("token-%d", idx)); err != nil {
+				t.Errorf("Failed to set token: %v", err)
+			}
 		}(i)
 		go func() {
 			defer wg.Done()
