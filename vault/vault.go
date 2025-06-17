@@ -164,6 +164,35 @@ func tokenRenewer(client *vault.Client) {
 		0,              // no max attempts (infinite)
 	)
 
+	// Check if we already have a valid token from initial authentication
+	if currentToken := getCurrentToken(); currentToken != "" {
+		log.Info("Token already exists, checking if renewable")
+
+		// Try to look up the current token
+		tokenInfo, err := client.Auth().Token().LookupSelf()
+		if err == nil {
+			// Create a Secret object for the existing token
+			if renewable, ok := tokenInfo.Data["renewable"].(bool); ok && renewable {
+				ttl, _ := tokenInfo.Data["ttl"].(json.Number).Int64()
+				vaultLoginResp := &vault.Secret{
+					Auth: &vault.SecretAuth{
+						ClientToken:   currentToken,
+						Renewable:     renewable,
+						LeaseDuration: int(ttl),
+					},
+				}
+
+				log.Info("Managing lifecycle of existing token")
+				err = manageTokenLifecycle(client, vaultLoginResp)
+				if err != nil {
+					log.Error(err, "Token lifecycle ended for existing token")
+				}
+
+				// After lifecycle ends, continue with normal flow
+			}
+		}
+	}
+
 	for {
 		vaultLoginResp, err := login(client)
 		if err != nil {
@@ -509,8 +538,32 @@ func Start() error {
 		return nil
 	}
 
+	// For auth-based authentication, perform initial authentication synchronously
+	log.Info("Performing initial Vault authentication")
+
+	// Determine login method
+	login := loginKube
+	if getEnv("VAULT_LOGIN_USER", "") != "" && getEnv("VAULT_LOGIN_PASSWORD", "") != "" {
+		login = loginUserPass
+	} else if getEnv("VAULT_APP_ROLE", "") != "" && getEnv("VAULT_SECRET_ID", "") != "" {
+		login = loginAppRole
+	}
+
+	// Perform initial authentication
+	vaultLoginResp, err := login(c)
+	if err != nil {
+		dmetrics.VaultTokenError.WithLabelValues(vaultURL).SetToCurrentTime()
+		log.Error(err, "Initial Vault authentication failed")
+		return fmt.Errorf("initial Vault authentication failed: %w", err)
+	}
+
+	// Set the initial token
+	setCurrentToken(vaultLoginResp.Auth.ClientToken)
+	log.Info("Initial Vault authentication successful")
+
 	dmetrics.VaultError.WithLabelValues(vaultURL).Set(0)
 
+	// Start the token renewer in the background
 	go tokenRenewer(c)
 
 	return nil
