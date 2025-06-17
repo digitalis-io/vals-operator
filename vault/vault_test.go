@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -548,4 +550,135 @@ func TestTokenSetAndGet(t *testing.T) {
 	if !strings.Contains(finalToken, "token-") {
 		t.Errorf("Expected token to contain 'token-', got %s", finalToken)
 	}
+}
+
+func TestChildProcessInheritsVaultToken(t *testing.T) {
+	// Save original values
+	originalToken := currentToken
+	originalEnvToken := os.Getenv("VAULT_TOKEN")
+	defer func() {
+		currentToken = originalToken
+		if originalEnvToken != "" {
+			os.Setenv("VAULT_TOKEN", originalEnvToken)
+		} else {
+			os.Unsetenv("VAULT_TOKEN")
+		}
+	}()
+
+	// Set a test token
+	testToken := "test-child-process-token-12345"
+	if err := setCurrentToken(testToken); err != nil {
+		t.Fatalf("Failed to set current token: %v", err)
+	}
+
+	// Create a simple child process that echoes the VAULT_TOKEN environment variable
+	cmd := exec.Command("sh", "-c", "echo $VAULT_TOKEN")
+
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to run child process: %v", err)
+	}
+
+	// Check that the child process sees our token
+	childToken := strings.TrimSpace(string(output))
+	if childToken != testToken {
+		t.Errorf("Child process did not inherit correct VAULT_TOKEN. Expected %s, got %s", testToken, childToken)
+	}
+
+	t.Logf("✓ Child process correctly inherited VAULT_TOKEN: %s", childToken)
+
+	// Test with another token to ensure changes propagate
+	newToken := "updated-child-token-67890"
+	if err := setCurrentToken(newToken); err != nil {
+		t.Fatalf("Failed to set updated token: %v", err)
+	}
+
+	cmd = exec.Command("sh", "-c", "echo $VAULT_TOKEN")
+	output, err = cmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to run second child process: %v", err)
+	}
+
+	childToken = strings.TrimSpace(string(output))
+	if childToken != newToken {
+		t.Errorf("Child process did not inherit updated VAULT_TOKEN. Expected %s, got %s", newToken, childToken)
+	}
+
+	t.Logf("✓ Child process correctly inherited updated VAULT_TOKEN: %s", childToken)
+}
+
+func TestSetCurrentTokenSetsEnvironmentVariable(t *testing.T) {
+	// Save original values
+	originalToken := currentToken
+	originalEnvToken := os.Getenv("VAULT_TOKEN")
+	defer func() {
+		currentToken = originalToken
+		if originalEnvToken != "" {
+			os.Setenv("VAULT_TOKEN", originalEnvToken)
+		} else {
+			os.Unsetenv("VAULT_TOKEN")
+		}
+	}()
+
+	// Test setting a token
+	testToken := "test-token-12345"
+	if err := setCurrentToken(testToken); err != nil {
+		t.Fatalf("Failed to set current token: %v", err)
+	}
+
+	// Verify the token is set in memory
+	if getCurrentToken() != testToken {
+		t.Errorf("Expected current token %s, got %s", testToken, getCurrentToken())
+	}
+
+	// Verify the environment variable is set
+	envToken := os.Getenv("VAULT_TOKEN")
+	if envToken != testToken {
+		t.Errorf("Expected VAULT_TOKEN env var %s, got %s", testToken, envToken)
+	}
+
+	// Test setting a different token
+	newToken := "new-token-67890"
+	if err := setCurrentToken(newToken); err != nil {
+		t.Fatalf("Failed to set new token: %v", err)
+	}
+
+	// Verify both memory and environment are updated
+	if getCurrentToken() != newToken {
+		t.Errorf("Expected current token %s, got %s", newToken, getCurrentToken())
+	}
+
+	envToken = os.Getenv("VAULT_TOKEN")
+	if envToken != newToken {
+		t.Errorf("Expected VAULT_TOKEN env var %s, got %s", newToken, envToken)
+	}
+}
+
+func TestEnvironmentVariableForChildProcesses(t *testing.T) {
+	// Save original values
+	originalToken := currentToken
+	originalEnvToken := os.Getenv("VAULT_TOKEN")
+	defer func() {
+		currentToken = originalToken
+		if originalEnvToken != "" {
+			os.Setenv("VAULT_TOKEN", originalEnvToken)
+		} else {
+			os.Unsetenv("VAULT_TOKEN")
+		}
+	}()
+
+	// Set a token
+	testToken := "child-process-token"
+	if err := setCurrentToken(testToken); err != nil {
+		t.Fatalf("Failed to set current token: %v", err)
+	}
+
+	// Verify the environment variable can be read by child processes
+	// We'll simulate this by checking os.Getenv directly
+	childEnvToken := os.Getenv("VAULT_TOKEN")
+	if childEnvToken != testToken {
+		t.Errorf("Child processes would not see correct token. Expected %s, got %s", testToken, childEnvToken)
+	}
+
+	t.Logf("Child processes will inherit VAULT_TOKEN=%s", childEnvToken)
 }
