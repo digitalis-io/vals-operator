@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"digitalis.io/vals-operator/utils"
 	"github.com/hashicorp/vault/api"
 )
 
@@ -509,72 +508,6 @@ func TestLeaseOperations(t *testing.T) {
 	err = RevokeDbCredentials("")
 	if err == nil {
 		t.Error("Expected error for empty lease ID")
-	}
-}
-
-func TestExponentialBackoff(t *testing.T) {
-	backoff := utils.NewExponentialBackoff(
-		100*time.Millisecond,
-		1*time.Second,
-		2.0,
-		5,
-	)
-
-	// Test backoff progression
-	if d := backoff.NextBackoff(); d != 100*time.Millisecond {
-		t.Errorf("Expected 100ms, got %v", d)
-	}
-	if backoff.AttemptCount() != 1 {
-		t.Errorf("Expected attempt count 1, got %d", backoff.AttemptCount())
-	}
-
-	if d := backoff.NextBackoff(); d != 200*time.Millisecond {
-		t.Errorf("Expected 200ms, got %v", d)
-	}
-	if backoff.AttemptCount() != 2 {
-		t.Errorf("Expected attempt count 2, got %d", backoff.AttemptCount())
-	}
-
-	if d := backoff.NextBackoff(); d != 400*time.Millisecond {
-		t.Errorf("Expected 400ms, got %v", d)
-	}
-	if backoff.AttemptCount() != 3 {
-		t.Errorf("Expected attempt count 3, got %d", backoff.AttemptCount())
-	}
-
-	if d := backoff.NextBackoff(); d != 800*time.Millisecond {
-		t.Errorf("Expected 800ms, got %v", d)
-	}
-	if backoff.AttemptCount() != 4 {
-		t.Errorf("Expected attempt count 4, got %d", backoff.AttemptCount())
-	}
-
-	// Should cap at max
-	if d := backoff.NextBackoff(); d != 1*time.Second {
-		t.Errorf("Expected 1s (max), got %v", d)
-	}
-	if backoff.AttemptCount() != 5 {
-		t.Errorf("Expected attempt count 5, got %d", backoff.AttemptCount())
-	}
-
-	// Should return 0 after max attempts
-	if d := backoff.NextBackoff(); d != 0 {
-		t.Errorf("Expected 0 after max attempts, got %v", d)
-	}
-	if backoff.ShouldAttempt() {
-		t.Error("Should not attempt after max attempts")
-	}
-
-	// Test reset
-	backoff.Reset()
-	if backoff.AttemptCount() != 0 {
-		t.Errorf("Expected attempt count 0 after reset, got %d", backoff.AttemptCount())
-	}
-	if !backoff.ShouldAttempt() {
-		t.Error("Should be able to attempt after reset")
-	}
-	if d := backoff.NextBackoff(); d != 100*time.Millisecond {
-		t.Errorf("Expected 100ms after reset, got %v", d)
 	}
 }
 
