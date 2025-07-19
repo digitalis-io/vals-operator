@@ -1,8 +1,8 @@
 module digitalis.io/vals-operator
 
-go 1.23.0
+go 1.24.0
 
-toolchain go1.23.3
+toolchain go1.24.5
 
 require (
 	github.com/Masterminds/sprig/v3 v3.2.3
