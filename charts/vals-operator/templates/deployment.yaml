@@ -43,9 +43,75 @@ spec:
           envFrom:
             {{- toYaml .Values.secretEnv | nindent 12 }}
           {{- end }}
-          {{- if .Values.env }}
           env:
+          {{- if or .Values.openbao.enabled .Values.vault.enabled .Values.env }}
+            {{- if .Values.openbao.enabled }}
+            - name: BAO_ADDR
+              value: {{ .Values.openbao.address | quote }}
+            - name: BAO_SKIP_VERIFY
+              value: {{ .Values.openbao.skipVerify | quote }}
+            {{- if .Values.openbao.auth.kubernetes.roleId }}
+            - name: BAO_ROLE_ID
+              value: {{ .Values.openbao.auth.kubernetes.roleId | quote }}
+            - name: BAO_KUBERNETES_MOUNT_POINT
+              value: {{ .Values.openbao.auth.kubernetes.mountPoint | quote }}
+            {{- end }}
+            {{- if .Values.openbao.auth.approle.roleId }}
+            - name: BAO_APP_ROLE
+              value: {{ .Values.openbao.auth.approle.roleId | quote }}
+            - name: BAO_APPROLE_MOUNT_PATH
+              value: {{ .Values.openbao.auth.approle.mountPath | quote }}
+            {{- if .Values.openbao.auth.approle.secretId }}
+            - name: BAO_SECRET_ID
+              value: {{ .Values.openbao.auth.approle.secretId | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.openbao.auth.userpass.username }}
+            - name: BAO_LOGIN_USER
+              value: {{ .Values.openbao.auth.userpass.username | quote }}
+            - name: BAO_USERPASS_MOUNT_PATH
+              value: {{ .Values.openbao.auth.userpass.mountPath | quote }}
+            {{- if .Values.openbao.auth.userpass.password }}
+            - name: BAO_LOGIN_PASSWORD
+              value: {{ .Values.openbao.auth.userpass.password | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.vault.enabled }}
+            - name: VAULT_ADDR
+              value: {{ .Values.vault.address | quote }}
+            - name: VAULT_SKIP_VERIFY
+              value: {{ .Values.vault.skipVerify | quote }}
+            {{- if .Values.vault.auth.kubernetes.roleId }}
+            - name: VAULT_ROLE_ID
+              value: {{ .Values.vault.auth.kubernetes.roleId | quote }}
+            - name: VAULT_KUBERNETES_MOUNT_POINT
+              value: {{ .Values.vault.auth.kubernetes.mountPoint | quote }}
+            {{- end }}
+            {{- if .Values.vault.auth.approle.roleId }}
+            - name: VAULT_APP_ROLE
+              value: {{ .Values.vault.auth.approle.roleId | quote }}
+            - name: VAULT_APPROLE_MOUNT_PATH
+              value: {{ .Values.vault.auth.approle.mountPath | quote }}
+            {{- if .Values.vault.auth.approle.secretId }}
+            - name: VAULT_SECRET_ID
+              value: {{ .Values.vault.auth.approle.secretId | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.vault.auth.userpass.username }}
+            - name: VAULT_LOGIN_USER
+              value: {{ .Values.vault.auth.userpass.username | quote }}
+            - name: VAULT_USERPASS_MOUNT_PATH
+              value: {{ .Values.vault.auth.userpass.mountPath | quote }}
+            {{- if .Values.vault.auth.userpass.password }}
+            - name: VAULT_LOGIN_PASSWORD
+              value: {{ .Values.vault.auth.userpass.password | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.env }}
             {{- toYaml .Values.env | nindent 12 }}
+            {{- end }}
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

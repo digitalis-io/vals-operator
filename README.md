@@ -38,14 +38,43 @@ You can use the helm chart to install `vals-operator`. First of all, add the rep
 helm repo add digitalis https://digitalis-io.github.io/helm-charts
 ```
 
-You will need to provide the configuration to access the secrets store you decided on via either environment variables pre existing secrets.
+## Secrets Backend Configuration
+
+vals-operator now supports **both HashiCorp Vault and OpenBao** as secrets backends. The operator automatically detects which backend to use based on the environment variables you provide.
+
+### Using OpenBao (Recommended for New Deployments)
 
 ```sh
-# Example for Vault
+# Example with OpenBao using Kubernetes auth
+helm upgrade --install vals-operator --create-namespace -n vals-operator \
+  --set "openbao.enabled=true" \
+  --set "openbao.address=http://openbao:8200" \
+  --set "openbao.auth.kubernetes.roleId=vals-operator" \
+  digitalis/vals-operator
+
+# Example with OpenBao using AppRole auth
+helm upgrade --install vals-operator --create-namespace -n vals-operator \
+  --set "openbao.enabled=true" \
+  --set "openbao.address=http://openbao:8200" \
+  --set "openbao.auth.approle.roleId=my-role-id" \
+  --set "openbao.auth.approle.secretId=my-secret-id" \
+  digitalis/vals-operator
+```
+
+### Using HashiCorp Vault (For Existing Deployments)
+
+```sh
+# Example with Vault using Kubernetes auth
+helm upgrade --install vals-operator --create-namespace -n vals-operator \
+  --set "vault.enabled=true" \
+  --set "vault.address=http://vault:8200" \
+  --set "vault.auth.kubernetes.roleId=vals-operator" \
+  digitalis/vals-operator
+
+# Example with Vault using environment variables (legacy method - still supported)
 helm upgrade --install vals-operator --create-namespace -n vals-operator \
   --set "env[0].name=VAULT_ROLE_ID,env[0].value=vals-operator" \
-  --set "env[1].name=VAULT_SECRET_ID,env[1].value=my-secret-id" \
-  --set "env[2].name=VAULT_ADDR,env[2].value=https://vault:8200"
+  --set "env[1].name=VAULT_ADDR,env[1].value=https://vault:8200" \
   digitalis/vals-operator
 
 # Example for AWS using a secret
@@ -71,16 +100,65 @@ helm upgrade --install vals-operator --create-namespace -n vals-operator \
 ```
 
 > :information_source: Check out the [documentation](./docs/index.md) for further details and examples including EKS integration.
-## HashiCorp Vault Authentication
 
-If you're using Vault as backend you can also enable the Kubernetes Auth login method. Refer to the [HashiCorp documentation](https://www.vaultproject.io/docs/auth/kubernetes) on creating a role.
+## Dual Backend Support (Vault & OpenBao)
 
-You will need to add two additional environment variables to the `vals-operator` installation:
+vals-operator now provides **seamless dual backend support**, allowing you to use either HashiCorp Vault or OpenBao without code changes. This enables:
 
-* *VAULT_ROLE_ID*: required to enable Kubernetes Login
-* *VAULT_ADDR*: URL to the Vault server, ie, http://vault:8200
-* *VAULT_LOGIN_USER* and *VAULT_LOGIN_PASSWORD*: to use `userpass` authentication (insecure, not recommended)
-* *VAULT_APP_ROLE* and *VAULT_SECRET_ID*: to use `approle` authentication
+- **Zero-downtime migration** from Vault to OpenBao
+- **Backwards compatibility** with existing Vault deployments
+- **Environment variable fallback** - OpenBao variables can fall back to Vault variables
+
+### Backend Selection
+
+The operator automatically detects which backend to use:
+1. If `BAO_ADDR` is set → Uses OpenBao
+2. If `VAULT_ADDR` is set (and `BAO_ADDR` is not) → Uses HashiCorp Vault
+3. If both are set → Uses OpenBao with a warning (OpenBao takes precedence)
+4. If neither is set → Error
+
+### Environment Variable Compatibility
+
+For backwards compatibility, environment variables automatically fall back:
+- `BAO_*` variables fall back to `VAULT_*` if not set
+- This allows gradual migration without breaking existing configurations
+
+Example:
+```sh
+# These configurations are equivalent:
+BAO_ADDR=http://openbao:8200
+VAULT_ROLE_ID=my-role  # Will be used for OpenBao if BAO_ROLE_ID is not set
+
+# Or explicitly set both:
+BAO_ADDR=http://openbao:8200
+BAO_ROLE_ID=my-role
+```
+
+For detailed migration instructions, see [OPENBAO.md](OPENBAO.md) and [DUAL_BACKEND_SUPPORT.md](DUAL_BACKEND_SUPPORT.md).
+
+## Authentication Configuration
+
+### OpenBao Authentication
+
+For OpenBao, you can use the following environment variables:
+
+* **BAO_ADDR**: URL to the OpenBao server, e.g., http://openbao:8200
+* **BAO_ROLE_ID**: Required for Kubernetes authentication
+* **BAO_LOGIN_USER** and **BAO_LOGIN_PASSWORD**: For `userpass` authentication (insecure, not recommended)
+* **BAO_APP_ROLE** and **BAO_SECRET_ID**: For `approle` authentication
+
+### HashiCorp Vault Authentication
+
+For HashiCorp Vault, you can use the following environment variables:
+
+* **VAULT_ADDR**: URL to the Vault server, e.g., http://vault:8200
+* **VAULT_ROLE_ID**: Required for Kubernetes authentication
+* **VAULT_LOGIN_USER** and **VAULT_LOGIN_PASSWORD**: For `userpass` authentication (insecure, not recommended)
+* **VAULT_APP_ROLE** and **VAULT_SECRET_ID**: For `approle` authentication
+
+For Kubernetes authentication with either backend, refer to the respective documentation:
+- [OpenBao Kubernetes Auth](https://openbao.org/docs/auth/kubernetes/)
+- [Vault Kubernetes Auth](https://www.vaultproject.io/docs/auth/kubernetes)
 
 # Usage
 
