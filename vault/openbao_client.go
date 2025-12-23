@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"net/http"
 
-	openbao "github.com/openbao/openbao/api/v2"
 	openbaoApprole "github.com/openbao/openbao/api/auth/approle/v2"
 	openbaoKube "github.com/openbao/openbao/api/auth/kubernetes/v2"
 	openbaoUserpass "github.com/openbao/openbao/api/auth/userpass/v2"
+	openbao "github.com/openbao/openbao/api/v2"
 )
 
 // OpenBaoClient wraps OpenBao client to implement SecretsClient interface

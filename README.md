@@ -11,7 +11,7 @@
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/digitalis-io/vals-operator)
 <a href="https://artifacthub.io/packages/helm/vals-operator/vals-operator"><img alt="Artifact Hub" src="https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/vals-operator" /></a>
 
-**Vals-Operator** is a Kubernetes operator that integrates external
+**Vals-Operator** is a Kubernetes operator that integrates external secret stores with Kubernetes, keeping your secrets in sync.
 
 Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/helmfile/vals), it's a tool we use daily to keep secrets stored securely. Inspired by it,
 we have created an operator to manage Kubernetes secrets. As [Digitalis](https://digitalis.io) and our sister company [AxonOps](https://axonops.com) are data companies,
@@ -213,13 +213,13 @@ The default encoding is `text` but you can change it to `base64` per secret refe
 You may also use GoLang templates to format a secret. You can inject as variables any of the keys referenced in the `data` section to format, for example, a configuration file.
 The [sprig](https://github.com/Masterminds/sprig/blob/master/docs/index.md) functions are supported.
 
-## Vault database credentials
+## Vault/OpenBao database credentials
 
 ---
-> **_NOTE:_**  Vault >= 1.10 is required for this feature to work
+> **_NOTE:_**  Vault >= 1.10 or OpenBao >= 2.0 is required for this feature to work
 ---
 
-A great feature in HashiCorp Vault is the generate [database credentials](https://developer.hashicorp.com/vault/docs/secrets/databases) dynamically.
+A great feature in HashiCorp Vault and OpenBao is the ability to generate [database credentials](https://developer.hashicorp.com/vault/docs/secrets/databases) dynamically.
 The missing part is you need these credentials in Kubernertes where your applications are. This is why we have added a new resource definition to do just that:
 
 ```yaml

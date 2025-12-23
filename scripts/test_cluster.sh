@@ -114,7 +114,7 @@ kind: Cluster
 metadata:
   name: cluster-example
   namespace: postgres
-  
+
 spec:
   instances: 1
   storage:
@@ -142,4 +142,3 @@ for crd in config/crd/bases/*.yaml; do
   echo "Applying CRD: $crd"
   $KUBECTL apply -f "$crd"
 done
-
