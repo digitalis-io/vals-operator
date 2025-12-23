@@ -95,6 +95,33 @@ $KUBECTL exec -n hashicorp "$VAULT_POD" -- sh -c '
 
 echo "=== Kubernetes auth enabled on both OpenBao and Vault (basic config) ==="
 
+echo "=== Installing Postgres in 'postgres' namespace ==="
+helm repo add cnpg https://cloudnative-pg.github.io/charts
+helm upgrade --install cnpg cnpg/cloudnative-pg \
+  --namespace cnpg-system \
+  --create-namespace \
+  --wait
+cat <<EOF | $KUBECTL apply -f -
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgres
+spec: {}
+---
+# Example of PostgreSQL cluster
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cluster-example
+  namespace: postgres
+  
+spec:
+  instances: 1
+  storage:
+    size: 256Mi
+EOF
+
+
 echo ""
 echo "=== Connection Information ==="
 echo ""
@@ -115,3 +142,4 @@ for crd in config/crd/bases/*.yaml; do
   echo "Applying CRD: $crd"
   $KUBECTL apply -f "$crd"
 done
+

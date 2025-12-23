@@ -213,7 +213,7 @@ func GetDbCredentials(role string, mount string) (VaultDbSecret, error) {
 	cfg, err2 := client.Read(path)
 	if err2 != nil {
 		log.Info("Could not get access details for the database", "error", err2)
-	} else {
+	} else if cfg != nil && cfg.Data != nil {
 		conn, ok := cfg.Data["connection_details"].(map[string]interface{})
 		if !ok {
 			return dbSecret, fmt.Errorf("backend did not return the connection details for the database")
