@@ -217,9 +217,10 @@ func main() {
 		panic("Please remove the VAULT_AUTH_METHOD environment variable as it conflicts with `vals` backend engine")
 	}
 
-	if os.Getenv("VAULT_ADDR") != "" {
+	// Check if either Vault or OpenBao is configured
+	if os.Getenv("VAULT_ADDR") != "" || os.Getenv("BAO_ADDR") != "" {
 		if err := vault.Start(); err != nil {
-			setupLog.Error(err, "unable authenticate with Vault")
+			setupLog.Error(err, "unable to authenticate with secrets backend")
 			os.Exit(1)
 		}
 	}

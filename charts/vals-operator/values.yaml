@@ -65,11 +65,59 @@ args: []
 
 environmentSecret: ""
 
+# Secrets backend configuration
+# Choose either Vault or OpenBao by setting the appropriate enabled flag
+
+# OpenBao configuration (recommended for new deployments)
+openbao:
+  enabled: false
+  address: "http://openbao:8200"
+  skipVerify: false
+  # Authentication configuration
+  auth:
+    # Kubernetes auth
+    kubernetes:
+      roleId: ""
+      mountPoint: "kubernetes"
+    # AppRole auth
+    approle:
+      roleId: ""
+      secretId: ""
+      mountPath: "approle"
+    # UserPass auth
+    userpass:
+      username: ""
+      password: ""
+      mountPath: "userpass"
+
+# HashiCorp Vault configuration (legacy, for backwards compatibility)
+vault:
+  enabled: false
+  address: "http://vault:8200"
+  skipVerify: false
+  # Authentication configuration
+  auth:
+    # Kubernetes auth
+    kubernetes:
+      roleId: ""
+      mountPoint: "kubernetes"
+    # AppRole auth
+    approle:
+      roleId: ""
+      secretId: ""
+      mountPath: "approle"
+    # UserPass auth
+    userpass:
+      username: ""
+      password: ""
+      mountPath: "userpass"
+
 # See https://github.com/helmfile/vals
 # for information on setting up your backend environment.
+# Additional environment variables (for vals refs and other backends)
 env: []
-  # - name: VAULT_SKIP_VERIFY
-  #   value: "true"
+  # - name: AWS_DEFAULT_REGION
+  #   value: "us-west-2"
 
 secretEnv: []
   # - secretRef:
