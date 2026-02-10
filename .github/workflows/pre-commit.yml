@@ -3,13 +3,13 @@ name: pre-commit
 on:
   pull_request:
   push:
-    branches: [master]
+    branches: [main]
 
 jobs:
   pre-commit:
     # Run the test inside a centos8 container
     runs-on: ubuntu-latest
-    container: golang:1.25-bookworm
+    container: golang:1.25-trixie
     steps:
 
       # Make pip3 work
