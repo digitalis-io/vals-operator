@@ -62,6 +62,8 @@ type ValsSecretReconciler struct {
 	RecordChanges        bool
 	Recorder             record.EventRecorder
 	DefaultTTL           time.Duration
+	DisableNamespaceSync     bool
+	AllowedNamespacesForSync map[string]bool // empty = all namespaces allowed
 
 	errorCounts map[string]int
 	errMu       sync.Mutex
@@ -146,7 +148,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	secretYaml := make(map[string]interface{})
 	for k, v := range secret.Spec.Data {
 		if strings.HasPrefix(v.Ref, k8sSecretPrefix) {
-			secretYaml[k], err = r.getKeyFromK8sSecret(v.Ref)
+			secretYaml[k], err = r.getKeyFromK8sSecret(v.Ref, secret.Namespace)
 			if err != nil {
 				if r.recordingEnabled(&secret) {
 					msg := fmt.Sprintf("Failed to get key from existing k8s secret %v", err)
@@ -442,12 +444,32 @@ func (r *ValsSecretReconciler) deleteSecret(ctx context.Context, sDef *secretv1.
 	return client.IgnoreNotFound(r.Delete(ctx, secret))
 }
 
-func (r *ValsSecretReconciler) getKeyFromK8sSecret(secretRef string) (string, error) {
+// isNamespaceSyncAllowed returns nil if referencedNamespace may be accessed from
+// a ValsSecret in valsSecretNamespace. Same-namespace refs are always allowed.
+func (r *ValsSecretReconciler) isNamespaceSyncAllowed(valsSecretNamespace, referencedNamespace string) error {
+	if referencedNamespace == valsSecretNamespace {
+		return nil
+	}
+	if r.DisableNamespaceSync {
+		return fmt.Errorf("cross-namespace ref+k8s:// is disabled: namespace %q cannot reference %q",
+			valsSecretNamespace, referencedNamespace)
+	}
+	if len(r.AllowedNamespacesForSync) > 0 && !r.AllowedNamespacesForSync[referencedNamespace] {
+		return fmt.Errorf("cross-namespace ref+k8s:// denied: namespace %q is not in the allowed list",
+			referencedNamespace)
+	}
+	return nil
+}
+
+func (r *ValsSecretReconciler) getKeyFromK8sSecret(secretRef, valsSecretNamespace string) (string, error) {
 	re := regexp.MustCompile(`ref\+k8s://(?P<namespace>\S+)/(?P<secretName>\S+)#(?P<key>\S+)`)
 	matchMap := utils.FindAllGroups(re, secretRef)
 
 	if !utils.K8sSecretFound(matchMap) {
 		return "", fmt.Errorf("the ref+k8s secret '%s' did not match the regular expression for ref+k8s://namespace/secret-name#key", secretRef)
+	}
+	if err := r.isNamespaceSyncAllowed(valsSecretNamespace, matchMap["namespace"]); err != nil {
+		return "", err
 	}
 	secret, err := r.getSecret(matchMap["secretName"], matchMap["namespace"])
 	if err != nil {

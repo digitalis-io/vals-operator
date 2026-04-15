@@ -31,9 +31,17 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          {{- if .Values.args }}
+          {{- if or .Values.args .Values.disableNamespaceSync .Values.allowedNamespacesForSync }}
           args:
+            {{- if .Values.args }}
             {{- toYaml .Values.args | nindent 12 }}
+            {{- end }}
+            {{- if .Values.disableNamespaceSync }}
+            - -disable-namespace-sync
+            {{- end }}
+            {{- if .Values.allowedNamespacesForSync }}
+            - -allowed-namespaces-for-sync={{ .Values.allowedNamespacesForSync }}
+            {{- end }}
           {{- end }}
           {{- if .Values.environmentSecret }}
           envFrom:
