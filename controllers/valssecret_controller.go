@@ -54,14 +54,14 @@ import (
 // ValsSecretReconciler reconciles a ValsSecret object
 type ValsSecretReconciler struct {
 	client.Client
-	Log                  logr.Logger
-	Ctx                  context.Context
-	APIReader            client.Reader
-	ReconciliationPeriod time.Duration
-	ExcludeNamespaces    map[string]bool
-	RecordChanges        bool
-	Recorder             record.EventRecorder
-	DefaultTTL           time.Duration
+	Log                      logr.Logger
+	Ctx                      context.Context
+	APIReader                client.Reader
+	ReconciliationPeriod     time.Duration
+	ExcludeNamespaces        map[string]bool
+	RecordChanges            bool
+	Recorder                 record.EventRecorder
+	DefaultTTL               time.Duration
 	DisableNamespaceSync     bool
 	AllowedNamespacesForSync map[string]bool // empty = all namespaces allowed
 
