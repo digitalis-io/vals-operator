@@ -1,0 +1,54 @@
+{
+  "name": "vals-operator",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "TZ": "${localEnv:TZ:Europe/London}",
+      "USER_UID": "${localEnv:HOST_UID:1000}",
+      "USER_GID": "${localEnv:HOST_GID:1000}",
+      "CLAUDE_CODE_VERSION": "latest",
+      "GIT_DELTA_VERSION": "0.18.2",
+      "ZSH_IN_DOCKER_VERSION": "1.2.0",
+      "GO_VERSION": "1.26.1",
+      "KIND_VERSION": "v0.31.0",
+      "KUBEBUILDER_VERSION": "v4.13.0"
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true
+    },
+    "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {}
+  },
+
+  // Required for DinD to run the inner daemon
+  "runArgs": ["--privileged", "--init"],
+  "mounts": [
+    // Optional: Only if you want to persist Docker data between container rebuilds
+    "source=dind-var-lib-docker,target=/var/lib/docker,type=volume",
+    "source=claude-code-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
+    "source=${localEnv:HOME}/.claude,target=/home/node/.claude,type=bind",
+    "source=${localEnv:HOME}/.kube,target=/home/node/.kube,type=bind,readonly"
+  ],
+
+  "customizations": {
+    "vscode": {
+      "settings": {},
+      "extensions": [
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "ms-azuretools.vscode-docker",
+        "golang.Go"
+      ]
+    }
+  },
+
+  "remoteEnv": {
+    "GO111MODULE": "on"
+  },
+
+  "onCreateCommand": "bash .devcontainer/post-install.sh",
+  
+  // Ensures you aren't stuck with root-only file permissions later
+  "remoteUser": "node"
+}

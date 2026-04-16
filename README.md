@@ -38,6 +38,22 @@ You can use the helm chart to install `vals-operator`. First of all, add the rep
 helm repo add digitalis https://digitalis-io.github.io/helm-charts
 ```
 
+### Install via OCI Registry (Helm 3.8+)
+
+The chart is published as an OCI artifact on every release. This is the RECOMMENDED installation method for Helm 3.8 and later — no `helm repo add` step is required.
+
+```bash
+helm install vals-operator oci://ghcr.io/digitalis-io/helm-charts/vals-operator --version <version>
+```
+
+To upgrade:
+
+```bash
+helm upgrade vals-operator oci://ghcr.io/digitalis-io/helm-charts/vals-operator --version <version>
+```
+
+> **Note:** The traditional Helm repository at `https://digitalis-io.github.io/helm-charts` remains available during the transition. Consumers on Helm 3.7 or earlier MUST use the `helm repo add` method above.
+
 ## Secrets Backend Configuration
 
 vals-operator now supports **both HashiCorp Vault and OpenBao** as secrets backends. The operator automatically detects which backend to use based on the environment variables you provide.

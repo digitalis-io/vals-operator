@@ -2,6 +2,16 @@
 
 ![Version: 0.7.10](https://img.shields.io/badge/Version-0.7.10-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v0.7.10](https://img.shields.io/badge/AppVersion-v0.7.10-informational?style=flat-square)
 
+## OCI Registry
+
+This chart is available as an OCI artifact. Helm 3.8+ consumers can install directly without adding a Helm repository:
+
+```bash
+helm install vals-operator oci://ghcr.io/digitalis-io/helm-charts/vals-operator --version <version>
+```
+
+The traditional Helm repository at `https://digitalis-io.github.io/helm-charts` remains available for Helm versions earlier than 3.8.
+
 This helm chart installs the Digitalis Vals Operator to manage and sync secrets from supported backends into Kubernetes.
 ## About Vals-Operator
 Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/helmfile/vals), it's a tool we use daily to keep secrets stored securely. Inspired by this tool, we have created an operator to manage Kubernetes secrets.
