@@ -11,6 +11,12 @@ Vals-operator uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - New `-disable-namespace-sync` flag to block all cross-namespace `ref+k8s://` references. When enabled, any `ref+k8s://` reference targeting a namespace other than the `ValsSecret`'s own namespace is rejected. Same-namespace references are unaffected. ([#91](https://github.com/digitalis-io/vals-operator/issues/91))
 - New `-allowed-namespaces-for-sync` flag to allowlist specific namespaces for cross-namespace `ref+k8s://` access. References targeting namespaces outside the list are rejected. An empty value (the default) permits all namespaces. `-disable-namespace-sync` takes precedence over this flag when both are set. ([#91](https://github.com/digitalis-io/vals-operator/issues/91))
+- Helm chart is now published as an OCI artifact to `oci://ghcr.io/digitalis-io/helm-charts/vals-operator` on every release, enabling installation without `helm repo add` on Helm 3.8+. ([#95](https://github.com/digitalis-io/vals-operator/issues/95))
+
+### Changed
+
+- Updated all Go module dependencies to latest stable versions; fixed `ENVTEST_K8S_VERSION` and bumped `CONTROLLER_TOOLS_VERSION`. ([#94](https://github.com/digitalis-io/vals-operator/issues/94))
+- Pinned all GitHub Actions workflow steps to SHA references. ([#94](https://github.com/digitalis-io/vals-operator/issues/94))
 
 ## [0.8.1] - 2026-02-10
 
