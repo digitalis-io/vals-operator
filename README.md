@@ -28,7 +28,78 @@ You can watch this brief video on how it works:
 
 ## Mirroring secrets
 
-We have also added the ability to copy secrets between namespaces. It uses the format `ref+k8s://namespace/secret#key`. This way you can keep secrets generated in one namespace in sync with any other namespace in the cluster.
+Vals-operator can copy secrets between namespaces using the `ref+k8s://namespace/secret#key` format. This lets a `ValsSecret` in one namespace pull a value from a Kubernetes secret in another namespace and keep it in sync.
+
+> **Warning:** Cross-namespace `ref+k8s://` references allow any namespace with a `ValsSecret` to read secrets from other namespaces, subject only to the operator's RBAC permissions — not the requesting namespace's own permissions. Admins SHOULD restrict this behaviour in multi-tenant clusters using the flags documented in [Operator Flags](#operator-flags).
+
+# Operator Flags
+
+The operator binary accepts the following flags. All flags are optional unless noted.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `-metrics-bind-address` | string | `:8080` | Address the metrics endpoint binds to. |
+| `-health-probe-bind-address` | string | `:8081` | Address the health probe endpoint binds to. |
+| `-reconcile-period` | duration | `5s` | How often the controller re-queues reconciliation events. |
+| `-ttl` | duration | `5m0s` | How often each secret is checked against the backend store for updates. |
+| `-watch-namespaces` | string | `""` | Comma-separated list of namespaces the operator watches. Empty means all namespaces. |
+| `-exclude-namespaces` | string | `""` | Comma-separated list of namespaces the operator ignores entirely. |
+| `-record-changes` | bool | `true` | Records each secret update as a Kubernetes Event, visible via `kubectl describe`. Can be overridden per resource with the annotation `vals-operator.digitalis.io/record: "true"`. |
+| `-leader-elect` | bool | `false` | Enables leader election, ensuring only one active controller instance when running multiple replicas. |
+| `-disable-namespace-sync` | bool | `false` | Blocks all cross-namespace `ref+k8s://` references. See [Cross-Namespace Reference Security](#cross-namespace-reference-security). |
+| `-allowed-namespaces-for-sync` | string | `""` | Comma-separated allowlist of namespaces that may be referenced via `ref+k8s://`. See [Cross-Namespace Reference Security](#cross-namespace-reference-security). |
+
+## Cross-Namespace Reference Security
+
+The `ref+k8s://namespace/secret#key` syntax lets a `ValsSecret` read a Kubernetes secret from a different namespace. In multi-tenant clusters this is a privilege escalation vector: a tenant who can create `ValsSecret` resources can read secrets from any namespace the operator has RBAC access to.
+
+Two flags control this behaviour.
+
+### `-disable-namespace-sync`
+
+When set to `true`, the operator rejects any `ref+k8s://` reference where the target namespace differs from the `ValsSecret`'s own namespace. Same-namespace references are never blocked.
+
+A rejected reference produces the event:
+
+```
+cross-namespace ref+k8s:// is disabled: namespace "tenant-a" cannot reference "tenant-b"
+```
+
+Use this flag in clusters where no cross-namespace secret sharing is required. It is the most restrictive option.
+
+```sh
+helm upgrade --install vals-operator digitalis/vals-operator \
+  --set "extraArgs[0]=-disable-namespace-sync=true"
+```
+
+### `-allowed-namespaces-for-sync`
+
+Provides a namespace-level allowlist for cross-namespace `ref+k8s://` references. Only namespaces named in the list may be used as the target of a cross-namespace reference. Same-namespace references are always permitted regardless of this list.
+
+A reference targeting a namespace not in the allowlist produces the event:
+
+```
+cross-namespace ref+k8s:// denied: namespace "restricted" is not in the allowed list
+```
+
+When the value is empty (the default), all namespaces are allowed — subject to `-disable-namespace-sync`.
+
+```sh
+helm upgrade --install vals-operator digitalis/vals-operator \
+  --set "extraArgs[0]=-allowed-namespaces-for-sync=shared-secrets,platform"
+```
+
+### Precedence
+
+`-disable-namespace-sync` takes precedence over `-allowed-namespaces-for-sync`. When `-disable-namespace-sync=true`, the allowlist is not consulted — all cross-namespace references are rejected regardless of the allowlist contents.
+
+| `-disable-namespace-sync` | `-allowed-namespaces-for-sync` | Result |
+|---------------------------|-------------------------------|--------|
+| `false` | `""` (empty) | All cross-namespace refs allowed |
+| `false` | `"ns-a,ns-b"` | Only refs targeting `ns-a` or `ns-b` allowed |
+| `true` | any value | All cross-namespace refs rejected |
+
+Same-namespace references are always allowed in every configuration.
 
 # Installation
 

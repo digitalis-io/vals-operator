@@ -48,7 +48,7 @@
   },
 
   "onCreateCommand": "bash .devcontainer/post-install.sh",
-  
+
   // Ensures you aren't stuck with root-only file permissions later
   "remoteUser": "node"
 }

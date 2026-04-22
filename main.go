@@ -86,6 +86,8 @@ func main() {
 	var excludeNamespaces string
 	var recordChanges bool
 	var defaultTTL time.Duration
+	var disableNamespaceSync bool
+	var allowedNamespacesForSync string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -95,6 +97,10 @@ func main() {
 	flag.StringVar(&excludeNamespaces, "exclude-namespaces", "", "Comma separated list of namespaces to ignore.")
 	flag.BoolVar(&recordChanges, "record-changes", true, "Records every time a secret has been updated. You can view them with kubectl describe. "+
 		"It may also be disabled globally and enabled per secret via the annotation 'vals-operator.digitalis.io/record: \"true\"'")
+	flag.BoolVar(&disableNamespaceSync, "disable-namespace-sync", false,
+		"Disable cross-namespace ref+k8s:// references. Refs targeting a different namespace than the ValsSecret are rejected.")
+	flag.StringVar(&allowedNamespacesForSync, "allowed-namespaces-for-sync", "",
+		"Comma-separated list of namespaces that may be referenced via ref+k8s://. Empty means all allowed (unless -disable-namespace-sync is set).")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -126,6 +132,13 @@ func main() {
 	if len(excludeNamespaces) > 0 {
 		for _, ns := range nsSlice(excludeNamespaces) {
 			excludeNs[ns] = true
+		}
+	}
+
+	allowedSyncNs := make(map[string]bool)
+	for _, ns := range nsSlice(allowedNamespacesForSync) {
+		if ns != "" {
+			allowedSyncNs[ns] = true
 		}
 	}
 
@@ -176,14 +189,16 @@ func main() {
 	defer cancel()
 
 	if err = (&controllers.ValsSecretReconciler{
-		Client:               mgr.GetClient(),
-		APIReader:            mgr.GetAPIReader(),
-		Ctx:                  ctx,
-		ReconciliationPeriod: reconcilePeriod,
-		ExcludeNamespaces:    excludeNs,
-		RecordChanges:        recordChanges,
-		DefaultTTL:           defaultTTL,
-		Log:                  ctrl.Log.WithName("controllers").WithName("vals-operator"),
+		Client:                   mgr.GetClient(),
+		APIReader:                mgr.GetAPIReader(),
+		Ctx:                      ctx,
+		ReconciliationPeriod:     reconcilePeriod,
+		ExcludeNamespaces:        excludeNs,
+		RecordChanges:            recordChanges,
+		DefaultTTL:               defaultTTL,
+		Log:                      ctrl.Log.WithName("controllers").WithName("vals-operator"),
+		DisableNamespaceSync:     disableNamespaceSync,
+		AllowedNamespacesForSync: allowedSyncNs,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ValsSecret")
 		os.Exit(1)

@@ -51,6 +51,10 @@ args: []
   #   	Records every time a secret has been updated. You can view them with kubectl describe. It may also be disabled globally and enabled per secret via the annotation 'vals-operator.digitalis.io/record: "true"' (default true)
   # -ttl duration
   #   	How often to check backend for updates. (default 5m0s)
+  # -disable-namespace-sync
+  #   	Disable cross-namespace ref+k8s:// references. When true, a ValsSecret can only reference k8s secrets in its own namespace.
+  # -allowed-namespaces-for-sync string
+  #   	Comma-separated list of namespaces that may be referenced via ref+k8s://. Empty means all namespaces are allowed (unless -disable-namespace-sync is true).
   # -watch-namespaces string
   #   	Comma separated list of namespaces that vals-operator will watch.
   # -zap-devel
@@ -62,6 +66,14 @@ args: []
   # -zap-stacktrace-level value
   #   	Zap Level at and above which stacktraces are captured (one of 'info', 'error', 'panic').
 
+
+# Disable cross-namespace ref+k8s:// references. When true, a ValsSecret can only
+# reference k8s secrets in its own namespace. Takes precedence over allowedNamespacesForSync.
+disableNamespaceSync: false
+
+# Comma-separated list of namespaces that may be referenced via ref+k8s://.
+# Empty string means all namespaces are allowed (unless disableNamespaceSync is true).
+allowedNamespacesForSync: ""
 
 environmentSecret: ""
 
