@@ -144,6 +144,15 @@ jobs:
       - name: Log into ghcr.io Helm registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
 
+      # cosign reads Docker config (~/.docker/config.json) to push signature
+      # blobs; helm registry login does not populate this. Both logins needed.
+      - name: Log into GHCR for cosign
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Package Helm chart
         run: helm package charts/vals-operator --destination /tmp/helm-packages
 
