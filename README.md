@@ -125,6 +125,63 @@ helm upgrade vals-operator oci://ghcr.io/digitalis-io/helm-charts/vals-operator 
 
 > **Note:** The traditional Helm repository at `https://digitalis-io.github.io/helm-charts` remains available during the transition. Consumers on Helm 3.7 or earlier MUST use the `helm repo add` method above.
 
+## Verifying Signatures
+
+Container images and the Helm OCI chart are signed on every release using
+[cosign](https://github.com/sigstore/cosign) keyless signing via GitHub Actions
+OIDC. No long-lived signing key is used — verification trusts only the Sigstore
+public infrastructure and the workflow identity that produced the artifact.
+
+Install cosign with `brew install cosign` or grab a binary from the
+[Sigstore releases page](https://github.com/sigstore/cosign/releases).
+
+> **Important:** Always verify by an immutable reference — the version tag
+> (`vX.Y.Z`) or, preferably, the image digest (`@sha256:...`). The mutable
+> `:latest` tag is not a stable signing target.
+
+Verify the container image (substitute the release tag):
+
+```sh
+cosign verify ghcr.io/digitalis-io/vals-operator:<TAG> \
+  --certificate-identity-regexp "^https://github\.com/digitalis-io/vals-operator/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  | jq .
+```
+
+Verify the Helm OCI chart (substitute the chart version, no leading `v`):
+
+```sh
+cosign verify ghcr.io/digitalis-io/helm-charts/vals-operator:<CHART_VERSION> \
+  --certificate-identity-regexp "^https://github\.com/digitalis-io/vals-operator/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  | jq .
+```
+
+## Software Bill of Materials
+
+Every released container image ships with an SPDX 2.3 JSON and a CycloneDX 1.5
+JSON SBOM. Both are attached as assets to the corresponding GitHub Release, and
+the SPDX SBOM is additionally recorded as a cosign attestation on the image
+digest.
+
+Download from the GitHub Release:
+
+```
+https://github.com/digitalis-io/vals-operator/releases/download/<TAG>/vals-operator-<TAG>-sbom.spdx.json
+https://github.com/digitalis-io/vals-operator/releases/download/<TAG>/vals-operator-<TAG>-sbom.cdx.json
+```
+
+Verify the SBOM attestation against the image digest:
+
+```sh
+cosign verify-attestation \
+  --type spdxjson \
+  --certificate-identity-regexp "^https://github\.com/digitalis-io/vals-operator/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/digitalis-io/vals-operator@<DIGEST> \
+  | jq '.payload | @base64d | fromjson'
+```
+
 ## Secrets Backend Configuration
 
 vals-operator now supports **both HashiCorp Vault and OpenBao** as secrets backends. The operator automatically detects which backend to use based on the environment variables you provide.

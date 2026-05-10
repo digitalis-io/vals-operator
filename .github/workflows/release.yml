@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+      id-token: write       # cosign keyless signing + SBOM attestation via Fulcio
+      contents: write       # anchore/sbom-action uploads SBOM as Release asset
     steps:
       - name: Check out the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -45,6 +47,7 @@ jobs:
           password: "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
         with:
           platforms: linux/amd64,linux/arm/v6,linux/arm64
@@ -60,6 +63,48 @@ jobs:
           labels: |
             LABEL org.opencontainers.image.source="https://github.com/${{ env.REPO_OWNER }}/vals-operator"
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
+      # Sign the image by digest (immutable) rather than tag (mutable). Signature
+      # is stored alongside the image in GHCR and verifiable with the Fulcio
+      # certificate identity emitted by this workflow run. See README "Verifying
+      # Signatures" for the verify command consumers should use.
+      - name: Sign container image with cosign (keyless)
+        env:
+          IMAGE: ghcr.io/${{ env.REPO_OWNER }}/vals-operator@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}"
+
+      # Generate SBOM by scanning the image from the registry by digest, so the
+      # SBOM reflects exactly the bytes pushed (not the build context).
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@fc46e51fd3cb168ffb36c6d1915723c47db58abb # v0.17.7
+        with:
+          image: ghcr.io/${{ env.REPO_OWNER }}/vals-operator@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          artifact-name: vals-operator-${{ env.TAG }}-sbom.spdx.json
+          output-file: /tmp/vals-operator-sbom.spdx.json
+          upload-release-assets: true
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@fc46e51fd3cb168ffb36c6d1915723c47db58abb # v0.17.7
+        with:
+          image: ghcr.io/${{ env.REPO_OWNER }}/vals-operator@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          artifact-name: vals-operator-${{ env.TAG }}-sbom.cdx.json
+          upload-release-assets: true
+
+      # Record the SPDX SBOM as a cosign attestation on the image digest. This
+      # attestation is retrievable with `cosign verify-attestation --type spdxjson`.
+      - name: Attest SBOM to image with cosign
+        env:
+          IMAGE: ghcr.io/${{ env.REPO_OWNER }}/vals-operator@${{ steps.build.outputs.digest }}
+        run: |
+          cosign attest --yes \
+            --predicate /tmp/vals-operator-sbom.spdx.json \
+            --type spdxjson \
+            "${IMAGE}"
+
   # Publish the Helm chart as an OCI artifact to ghcr.io.
   # The traditional Helm repo at https://digitalis-io.github.io/helm-charts
   # remains the primary distribution channel and is managed in a separate repo.
@@ -71,6 +116,7 @@ jobs:
     needs: [release]
     permissions:
       packages: write
+      id-token: write       # cosign keyless signing of the OCI chart artifact
     steps:
       - name: Check out the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -101,5 +147,25 @@ jobs:
       - name: Package Helm chart
         run: helm package charts/vals-operator --destination /tmp/helm-packages
 
+      # Capture the OCI digest emitted by `helm push` so cosign can sign by digest.
+      # `helm push` writes "Digest: sha256:..." on stdout for OCI pushes.
       - name: Push Helm chart to OCI registry
-        run: helm push "/tmp/helm-packages/vals-operator-${CHART_VERSION}.tgz" oci://ghcr.io/digitalis-io/helm-charts
+        id: helm_push
+        run: |
+          set -euo pipefail
+          helm push "/tmp/helm-packages/vals-operator-${CHART_VERSION}.tgz" \
+            oci://ghcr.io/digitalis-io/helm-charts 2>&1 | tee /tmp/helm-push.log
+          DIGEST="$(grep -E '^Digest: ' /tmp/helm-push.log | awk '{print $2}')"
+          if [ -z "${DIGEST}" ]; then
+            echo "Failed to extract chart digest from helm push output" >&2
+            exit 1
+          fi
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
+      - name: Sign Helm OCI chart with cosign (keyless)
+        env:
+          CHART_REF: ghcr.io/digitalis-io/helm-charts/vals-operator@${{ steps.helm_push.outputs.digest }}
+        run: cosign sign --yes "${CHART_REF}"
