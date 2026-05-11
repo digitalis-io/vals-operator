@@ -2,8 +2,9 @@
 name: Publish Docker image
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   release:
@@ -12,7 +13,7 @@ jobs:
     permissions:
       packages: write
       id-token: write       # cosign keyless signing + SBOM attestation via Fulcio
-      contents: write       # anchore/sbom-action uploads SBOM as Release asset
+      contents: write       # create GitHub Release + SBOM asset upload
     steps:
       - name: Check out the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -74,6 +75,17 @@ jobs:
         env:
           IMAGE: ghcr.io/${{ env.REPO_OWNER }}/vals-operator@${{ steps.build.outputs.digest }}
         run: cosign sign --yes "${IMAGE}"
+
+      # Create the GitHub Release so anchore/sbom-action can attach SBOM assets.
+      # Triggered on tag push; release notes auto-generated from commits.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TAG }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
 
       # Generate SBOM by scanning the image from the registry by digest, so the
       # SBOM reflects exactly the bytes pushed (not the build context).
