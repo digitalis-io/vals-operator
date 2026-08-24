@@ -17,8 +17,12 @@ import (
 //
 //	CLICKHOUSE_NATIVE_ADDR=127.0.0.1:9000 \
 //	CLICKHOUSE_HTTP_ADDR=127.0.0.1:8123 \
+//	CLICKHOUSE_NATIVE_TLS_ADDR=127.0.0.1:9440 \
+//	CLICKHOUSE_HTTPS_ADDR=127.0.0.1:8443 \
 //	CLICKHOUSE_LOGIN_PASSWORD=rootpass \
 //	go test -tags integration -race ./db/clickhouse/...
+//
+// hack/clickhouse-test-server.sh starts a server configured this way.
 func addrOrSkip(t *testing.T, env string) string {
 	t.Helper()
 	addr := os.Getenv(env)
@@ -30,6 +34,15 @@ func addrOrSkip(t *testing.T, env string) string {
 
 func loginPassword() string {
 	return os.Getenv("CLICKHOUSE_LOGIN_PASSWORD")
+}
+
+// loginUsername is the account used to run ALTER USER. It needs SQL-driven
+// access control.
+func loginUsername() string {
+	if username := os.Getenv("CLICKHOUSE_LOGIN_USERNAME"); username != "" {
+		return username
+	}
+	return DefaultUser
 }
 
 // canAuthenticate reports whether the user can log in with the given password.
@@ -52,7 +65,7 @@ func createUser(t *testing.T, addr, username, password string) {
 	t.Helper()
 	conn, err := ch.Open(&ch.Options{
 		Addr: []string{addr},
-		Auth: ch.Auth{Database: "default", Username: "default", Password: loginPassword()},
+		Auth: ch.Auth{Database: "default", Username: loginUsername(), Password: loginPassword()},
 	})
 	if err != nil {
 		t.Fatalf("cannot open connection: %v", err)
@@ -80,6 +93,7 @@ func TestRotationOverNativeProtocol(t *testing.T) {
 	err := UpdateUserPassword(dbType.DatabaseBackend{
 		Username:      "vals_native",
 		Password:      "newpass",
+		LoginUsername: loginUsername(),
 		LoginPassword: loginPassword(),
 		Hosts:         []string{addr},
 		TLS:           TLSDisable,
@@ -104,6 +118,7 @@ func TestRotationOverHTTPProtocol(t *testing.T) {
 	err := UpdateUserPassword(dbType.DatabaseBackend{
 		Username:      "vals_http",
 		Password:      "newpass",
+		LoginUsername: loginUsername(),
 		LoginPassword: loginPassword(),
 		Hosts:         []string{"http://" + addr},
 	})
@@ -125,6 +140,7 @@ func TestRotationEscapesHostileNames(t *testing.T) {
 	err := UpdateUserPassword(dbType.DatabaseBackend{
 		Username:      username,
 		Password:      password,
+		LoginUsername: loginUsername(),
 		LoginPassword: loginPassword(),
 		Hosts:         []string{addr},
 		TLS:           TLSDisable,
@@ -145,6 +161,7 @@ func TestRotationFailsOverToTheNextHost(t *testing.T) {
 	err := UpdateUserPassword(dbType.DatabaseBackend{
 		Username:      "vals_failover",
 		Password:      "newpass",
+		LoginUsername: loginUsername(),
 		LoginPassword: loginPassword(),
 		Hosts:         []string{"127.0.0.1:1", addr},
 		TLS:           TLSDisable,
@@ -163,9 +180,10 @@ func TestRotationUsesTheDefaultLoginUser(t *testing.T) {
 	createUser(t, addr, "vals_defaults", "oldpass")
 
 	// No LoginUsername and no Port: `default` and 9000 must be used. This
-	// only proves the defaults when the server listens on 9000.
-	if os.Getenv("CLICKHOUSE_NATIVE_ADDR_IS_DEFAULT_PORT") == "" {
-		t.Skip("CLICKHOUSE_NATIVE_ADDR_IS_DEFAULT_PORT not set")
+	// only proves the defaults when the server listens on 9000 and the
+	// `default` user is the one with SQL-driven access control.
+	if os.Getenv("CLICKHOUSE_NATIVE_ADDR_IS_DEFAULT_PORT") == "" || loginUsername() != DefaultUser {
+		t.Skip("the server is not reachable as default@:9000")
 	}
 	host, _, err := splitHostPort(addr)
 	if err != nil {
@@ -184,6 +202,72 @@ func TestRotationUsesTheDefaultLoginUser(t *testing.T) {
 	}
 
 	if !canAuthenticate(t, addr, "vals_defaults", "newpass") {
+		t.Error("the user cannot authenticate with the new password")
+	}
+}
+
+func TestRotationOverNativeTLS(t *testing.T) {
+	addr := addrOrSkip(t, "CLICKHOUSE_NATIVE_TLS_ADDR")
+	nativeAddr := addrOrSkip(t, "CLICKHOUSE_NATIVE_ADDR")
+	createUser(t, nativeAddr, "vals_native_tls", "oldpass")
+
+	err := UpdateUserPassword(dbType.DatabaseBackend{
+		Username:      "vals_native_tls",
+		Password:      "newpass",
+		LoginUsername: loginUsername(),
+		LoginPassword: loginPassword(),
+		Hosts:         []string{"tls://" + addr},
+		TLS:           TLSSkipVerify,
+	})
+	if err != nil {
+		t.Fatalf("rotation failed: %v", err)
+	}
+
+	if !canAuthenticate(t, nativeAddr, "vals_native_tls", "newpass") {
+		t.Error("the user cannot authenticate with the new password")
+	}
+}
+
+func TestRotationOverHTTPS(t *testing.T) {
+	addr := addrOrSkip(t, "CLICKHOUSE_HTTPS_ADDR")
+	nativeAddr := addrOrSkip(t, "CLICKHOUSE_NATIVE_ADDR")
+	createUser(t, nativeAddr, "vals_https", "oldpass")
+
+	err := UpdateUserPassword(dbType.DatabaseBackend{
+		Username:      "vals_https",
+		Password:      "newpass",
+		LoginUsername: loginUsername(),
+		LoginPassword: loginPassword(),
+		Hosts:         []string{"https://" + addr},
+		TLS:           TLSSkipVerify,
+	})
+	if err != nil {
+		t.Fatalf("rotation failed: %v", err)
+	}
+
+	if !canAuthenticate(t, nativeAddr, "vals_https", "newpass") {
+		t.Error("the user cannot authenticate with the new password")
+	}
+}
+
+func TestRotationPrefersTLSAndFallsBackToPlaintext(t *testing.T) {
+	// The default TLS mode against the plaintext native port: the TLS
+	// attempt must fail and the plaintext one must succeed.
+	addr := addrOrSkip(t, "CLICKHOUSE_NATIVE_ADDR")
+	createUser(t, addr, "vals_preferred", "oldpass")
+
+	err := UpdateUserPassword(dbType.DatabaseBackend{
+		Username:      "vals_preferred",
+		Password:      "newpass",
+		LoginUsername: loginUsername(),
+		LoginPassword: loginPassword(),
+		Hosts:         []string{addr},
+	})
+	if err != nil {
+		t.Fatalf("rotation failed: %v", err)
+	}
+
+	if !canAuthenticate(t, addr, "vals_preferred", "newpass") {
 		t.Error("the user cannot authenticate with the new password")
 	}
 }

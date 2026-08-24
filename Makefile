@@ -58,6 +58,18 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
 
+.PHONY: test-clickhouse
+test-clickhouse: ## Run the ClickHouse integration tests against a throwaway container.
+	./hack/clickhouse-test-server.sh start
+	CLICKHOUSE_NATIVE_ADDR=127.0.0.1:9000 \
+	CLICKHOUSE_NATIVE_TLS_ADDR=127.0.0.1:9440 \
+	CLICKHOUSE_HTTP_ADDR=127.0.0.1:8123 \
+	CLICKHOUSE_HTTPS_ADDR=127.0.0.1:8443 \
+	CLICKHOUSE_NATIVE_ADDR_IS_DEFAULT_PORT=1 \
+	CLICKHOUSE_LOGIN_PASSWORD=clickhouse \
+	go test -tags integration -race ./db/clickhouse/... ; \
+	status=$$? ; ./hack/clickhouse-test-server.sh stop ; exit $$status
+
 ##@ Build
 
 .PHONY: build

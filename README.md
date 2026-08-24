@@ -584,6 +584,10 @@ Each entry in `hosts` may carry its own scheme, which overrides `protocol` and
 `host:port` entry overrides the `port` field. Hosts are tried in order until
 one succeeds.
 
+The ClickHouse backend has integration tests covering every connection method
+above. Run them against a throwaway container with `make test-clickhouse`
+(requires Docker).
+
 **Constraint:** `ALTER USER` only works for users created through SQL-driven
 access control. Users defined in `users.xml` cannot be altered at runtime, and
 rotation against such a user fails with an error from the server and is logged
