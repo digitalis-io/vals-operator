@@ -88,8 +88,7 @@ func main() {
 	var defaultTTL time.Duration
 	var disableNamespaceSync bool
 	var allowedNamespacesForSync string
-	var allowedVaultMounts string
-	var allowedVaultRoles string
+	var allowedBackendPaths string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -103,12 +102,12 @@ func main() {
 		"Disable cross-namespace ref+k8s:// references. Refs targeting a different namespace than the ValsSecret are rejected.")
 	flag.StringVar(&allowedNamespacesForSync, "allowed-namespaces-for-sync", "",
 		"Comma-separated list of namespaces that may be referenced via ref+k8s://. Empty means all allowed (unless -disable-namespace-sync is set).")
-	flag.StringVar(&allowedVaultMounts, "dbsecret-allowed-mounts", "",
-		"Comma-separated list of database mounts a DbSecret may request credentials from. "+
-			"Entries are either 'mount' (any namespace) or 'namespace/mount'. Empty means all allowed.")
-	flag.StringVar(&allowedVaultRoles, "dbsecret-allowed-roles", "",
-		"Comma-separated list of roles a DbSecret may request credentials for. "+
-			"Entries are either 'role' (any namespace) or 'namespace/role'. Empty means all allowed.")
+	flag.StringVar(&allowedBackendPaths, "allowed-backend-paths", "",
+		"Restrict which backend paths each namespace may read, covering both ValsSecret references and "+
+			"DbSecret mounts/roles. Semicolon-separated 'namespace=prefix[,prefix...]' entries, where a "+
+			"namespace of '*' applies to all, e.g. "+
+			"'team-a=ref+vault://database/creds/team-a;*=ref+awssecrets://shared'. "+
+			"Empty means all paths are allowed.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -150,18 +149,13 @@ func main() {
 		}
 	}
 
-	allowedMounts := make(map[string]bool)
-	for _, m := range nsSlice(allowedVaultMounts) {
-		if m != "" {
-			allowedMounts[m] = true
-		}
+	backendAuthorizer, err := controllers.NewBackendAuthorizer(allowedBackendPaths)
+	if err != nil {
+		setupLog.Error(err, "Invalid -allowed-backend-paths")
+		os.Exit(1)
 	}
-
-	allowedRoles := make(map[string]bool)
-	for _, role := range nsSlice(allowedVaultRoles) {
-		if role != "" {
-			allowedRoles[role] = true
-		}
+	if backendAuthorizer.Enabled() {
+		setupLog.Info("Backend path authorization is enabled")
 	}
 
 	setupLog.Info("The backends will be checked every " + defaultTTL.String())
@@ -221,6 +215,7 @@ func main() {
 		Log:                      ctrl.Log.WithName("controllers").WithName("vals-operator"),
 		DisableNamespaceSync:     disableNamespaceSync,
 		AllowedNamespacesForSync: allowedSyncNs,
+		BackendAuthorizer:        backendAuthorizer,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ValsSecret")
 		os.Exit(1)
@@ -234,8 +229,7 @@ func main() {
 		ExcludeNamespaces:    excludeNs,
 		RecordChanges:        recordChanges,
 		DefaultTTL:           defaultTTL,
-		AllowedVaultMounts:   allowedMounts,
-		AllowedVaultRoles:    allowedRoles,
+		BackendAuthorizer:    backendAuthorizer,
 		Log:                  ctrl.Log.WithName("controllers").WithName("vals-operator"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DbSecret")

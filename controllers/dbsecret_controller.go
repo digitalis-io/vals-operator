@@ -59,13 +59,10 @@ type DbSecretReconciler struct {
 	RecordChanges        bool
 	Recorder             record.EventRecorder
 	DefaultTTL           time.Duration
-	// AllowedVaultMounts restricts which database mounts a DbSecret may request
-	// credentials from. Entries are either `mount` (allowed in any namespace) or
-	// `namespace/mount` (allowed in that namespace only). Empty = all allowed.
-	AllowedVaultMounts map[string]bool
-	// AllowedVaultRoles restricts which roles a DbSecret may request. Entries are
-	// either `role` or `namespace/role`. Empty = all allowed.
-	AllowedVaultRoles map[string]bool
+	// BackendAuthorizer restricts which backend paths a DbSecret in a given
+	// namespace may read. Shared with ValsSecretReconciler so one allowlist
+	// governs both resources. A nil or unconfigured authorizer permits everything.
+	BackendAuthorizer *BackendAuthorizer
 
 	errorCounts map[string]int
 	errMu       sync.Mutex
@@ -264,11 +261,8 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 // isVaultRefAllowed returns nil if the DbSecret may request credentials for the
 // mount and role it names.
 //
-// A DbSecret is namespaced but the operator holds a single, cluster-wide token
-// for the secrets backend. Without a restriction, anybody able to create a
-// DbSecret in any namespace can mint credentials for every database mount and
-// role that token can read. The allowlists are opt-in so existing deployments
-// keep working, but the format check always applies.
+// The format check always applies. The allowlist is opt-in, so existing
+// deployments keep working until they configure one.
 func (r *DbSecretReconciler) isVaultRefAllowed(sDef *digitalisiov1beta1.DbSecret) error {
 	mount := sDef.Spec.Vault.Mount
 	role := sDef.Spec.Vault.Role
@@ -280,18 +274,9 @@ func (r *DbSecretReconciler) isVaultRefAllowed(sDef *digitalisiov1beta1.DbSecret
 		return fmt.Errorf("invalid vault role %q: must match %s", role, vaultPathSegment)
 	}
 
-	if len(r.AllowedVaultMounts) > 0 &&
-		!r.AllowedVaultMounts[mount] &&
-		!r.AllowedVaultMounts[fmt.Sprintf("%s/%s", sDef.Namespace, mount)] {
-		return fmt.Errorf("vault mount %q is not allowed in namespace %s", mount, sDef.Namespace)
-	}
-	if len(r.AllowedVaultRoles) > 0 &&
-		!r.AllowedVaultRoles[role] &&
-		!r.AllowedVaultRoles[fmt.Sprintf("%s/%s", sDef.Namespace, role)] {
-		return fmt.Errorf("vault role %q is not allowed in namespace %s", role, sDef.Namespace)
-	}
-
-	return nil
+	/* Authorised against the same allowlist as a ValsSecret reference, so that
+	   restricting one resource cannot be sidestepped through the other. */
+	return r.BackendAuthorizer.Authorize(sDef.Namespace, canonicalDbSecretRef(mount, role))
 }
 
 // leaseIdSuffix extracts the trailing identifier from a lease ID returned by

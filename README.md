@@ -48,6 +48,7 @@ The operator binary accepts the following flags. All flags are optional unless n
 | `-leader-elect` | bool | `false` | Enables leader election, ensuring only one active controller instance when running multiple replicas. |
 | `-disable-namespace-sync` | bool | `false` | Blocks all cross-namespace `ref+k8s://` references. See [Cross-Namespace Reference Security](#cross-namespace-reference-security). |
 | `-allowed-namespaces-for-sync` | string | `""` | Comma-separated allowlist of namespaces that may be referenced via `ref+k8s://`. See [Cross-Namespace Reference Security](#cross-namespace-reference-security). |
+| `-allowed-backend-paths` | string | `""` | Restricts which backend paths each namespace may read, covering both `ValsSecret` references (all backends) and `DbSecret` mounts/roles. Semicolon-separated `namespace=prefix[,prefix...]` entries; `*` applies to all namespaces. See [Restricting which backend paths a namespace can read](#restricting-which-backend-paths-a-namespace-can-read). |
 
 ## Cross-Namespace Reference Security
 
@@ -419,30 +420,56 @@ into your secrets backend and reference it from `data`.
 but was never implemented — it was accepted by the API and then failed during reconciliation. A `DbSecret` using it is
 now rejected at apply time, so update those resources before upgrading the CRDs.
 
-### Restricting which databases a DbSecret can reach
+### Restricting which backend paths a namespace can read
 
-The operator holds a single token for the secrets backend, but `DbSecret` is a namespaced resource. By default any
-`DbSecret` in any watched namespace can request credentials for any mount and role that token is allowed to read. On a
-cluster where namespaces are not all equally trusted, restrict this:
+The operator authenticates to Vault/OpenBao (and every other backend) **once at startup**, with a single credential
+reused for every namespace. That credential's own policy is the real security boundary: anybody who can create a
+`ValsSecret` or a `DbSecret` in a watched namespace can read anything it can read.
+
+`-allowed-backend-paths` narrows that reach per namespace. It covers **both** resources — every `ref+...://` reference in
+a `ValsSecret`, across all backends, and the mount and role named by a `DbSecret`. Restricting only one of them achieves
+nothing, because the same dynamic database credentials are reachable either way:
+
+```yaml
+# These two request identical credentials, so both must be governed by the same rule.
+kind: DbSecret
+spec:
+  vault: {mount: database, role: other-tenant-role}
+---
+kind: ValsSecret
+spec:
+  data:
+    password: {ref: "ref+vault://database/creds/other-tenant-role#/password"}
+```
+
+Configure it as semicolon-separated `namespace=prefix[,prefix...]` entries. A namespace of `*` applies to every
+namespace, in addition to any namespace-specific entry:
 
 ```yaml
 # Helm values
-dbSecretAllowedMounts: "cass000,team-a/postgres"  # `mount` = any namespace, `namespace/mount` = that namespace only
-dbSecretAllowedRoles: "readonly,team-a/app"
+allowedBackendPaths: "team-a=ref+vault://database/creds/team-a,ref+k8s://team-a;team-b=ref+vault://database/creds/team-b;*=ref+awssecrets://shared"
 ```
 
-Or as operator flags directly:
+Or as an operator flag directly:
 
 ```sh
-vals-operator -dbsecret-allowed-mounts=cass000,team-a/postgres -dbsecret-allowed-roles=readonly
+vals-operator -allowed-backend-paths='team-a=ref+vault://database/creds/team-a;*=ref+awssecrets://shared'
 ```
 
-An empty value (the default) allows everything. A `DbSecret` naming a mount or role outside the list is rejected without
-contacting the backend, and the reason is recorded as an event on the resource:
+Prefixes match on path-segment boundaries, so `ref+vault://database/creds/team-a` does not cover
+`ref+vault://database/creds/team-abc`.
+
+An empty value (the default) allows every path, so upgrading changes nothing until you configure it. A namespace with no
+matching entry is denied once the flag is set. Denied references are rejected **before any backend call is made**, and
+the reason is recorded as an event naming the namespace and the rejected path:
 
 ```sh
+kubectl describe valssecret my-secret
 kubectl describe dbsecret my-db
 ```
+
+Note that `-disable-namespace-sync` and `-allowed-namespaces-for-sync` are a different, narrower control: they apply
+only to `ref+k8s://` references and do not restrict any other backend.
 
 ## Advance config: password rotation
 

@@ -172,8 +172,7 @@ func TestIsVaultRefAllowed(t *testing.T) {
 		namespace string
 		mount     string
 		role      string
-		mounts    map[string]bool
-		roles     map[string]bool
+		spec      string
 		wantErr   bool
 	}{
 		{
@@ -193,43 +192,34 @@ func TestIsVaultRefAllowed(t *testing.T) {
 			mount: "", role: "readonly", wantErr: true,
 		},
 		{
-			name: "mount on the allowlist is permitted", namespace: "apps",
-			mount: "cass000", role: "readonly",
-			mounts: map[string]bool{"cass000": true}, wantErr: false,
+			name: "format is checked even with no allowlist", namespace: "apps",
+			mount: "cass000/creds/admin", role: "readonly", spec: "", wantErr: true,
 		},
 		{
-			name: "mount off the allowlist is rejected", namespace: "apps",
-			mount: "prod-db", role: "readonly",
-			mounts: map[string]bool{"cass000": true}, wantErr: true,
+			name: "permitted mount and role", namespace: "team-a",
+			mount: "database", role: "team-a",
+			spec: "team-a=ref+vault://database/creds/team-a", wantErr: false,
 		},
 		{
-			name: "namespace qualified entry permits its own namespace", namespace: "team-a",
-			mount: "pg", role: "readonly",
-			mounts: map[string]bool{"team-a/pg": true}, wantErr: false,
+			name: "role outside the allowlist is rejected", namespace: "team-a",
+			mount: "database", role: "team-b",
+			spec: "team-a=ref+vault://database/creds/team-a", wantErr: true,
 		},
 		{
-			name: "namespace qualified entry rejects another namespace", namespace: "team-b",
-			mount: "pg", role: "readonly",
-			mounts: map[string]bool{"team-a/pg": true}, wantErr: true,
+			name: "allowlist for another namespace does not apply", namespace: "team-b",
+			mount: "database", role: "team-a",
+			spec: "team-a=ref+vault://database/creds/team-a", wantErr: true,
 		},
 		{
-			name: "role off the allowlist is rejected", namespace: "apps",
-			mount: "cass000", role: "admin",
-			roles: map[string]bool{"readonly": true}, wantErr: true,
-		},
-		{
-			name: "role on the allowlist is permitted", namespace: "apps",
-			mount: "cass000", role: "readonly",
-			roles: map[string]bool{"readonly": true}, wantErr: false,
+			name: "wildcard entry applies to every namespace", namespace: "team-c",
+			mount: "shared", role: "readonly",
+			spec: "*=ref+vault://shared", wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := &DbSecretReconciler{
-				AllowedVaultMounts: tt.mounts,
-				AllowedVaultRoles:  tt.roles,
-			}
+			r := &DbSecretReconciler{BackendAuthorizer: mustAuthorizer(t, tt.spec)}
 			err := r.isVaultRefAllowed(dbSecretFixture(tt.namespace, tt.mount, tt.role))
 			if (err != nil) != tt.wantErr {
 				t.Errorf("isVaultRefAllowed(%s/%s in %s) error = %v, wantErr %v",

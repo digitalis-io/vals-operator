@@ -55,10 +55,8 @@ args: []
   #   	Disable cross-namespace ref+k8s:// references. When true, a ValsSecret can only reference k8s secrets in its own namespace.
   # -allowed-namespaces-for-sync string
   #   	Comma-separated list of namespaces that may be referenced via ref+k8s://. Empty means all namespaces are allowed (unless -disable-namespace-sync is true).
-  # -dbsecret-allowed-mounts string
-  #   	Comma-separated list of database mounts a DbSecret may request credentials from. Entries are either 'mount' (any namespace) or 'namespace/mount'. Empty means all allowed.
-  # -dbsecret-allowed-roles string
-  #   	Comma-separated list of roles a DbSecret may request credentials for. Entries are either 'role' (any namespace) or 'namespace/role'. Empty means all allowed.
+  # -allowed-backend-paths string
+  #   	Restrict which backend paths each namespace may read, covering both ValsSecret references and DbSecret mounts/roles. Semicolon-separated 'namespace=prefix[,prefix...]' entries, where a namespace of '*' applies to all. Empty means all paths are allowed.
   # -watch-namespaces string
   #   	Comma separated list of namespaces that vals-operator will watch.
   # -zap-devel
@@ -79,16 +77,22 @@ disableNamespaceSync: false
 # Empty string means all namespaces are allowed (unless disableNamespaceSync is true).
 allowedNamespacesForSync: ""
 
-# Restrict which Vault/OpenBao database mounts a DbSecret may request credentials
-# from. Entries are either "mount" (allowed in any namespace) or
-# "namespace/mount" (allowed in that namespace only), comma separated.
-# Empty string means every mount the operator token can read is allowed, so set
-# this on any cluster where namespaces are not all equally trusted.
-dbSecretAllowedMounts: ""
-
-# Restrict which roles a DbSecret may request credentials for. Entries are either
-# "role" or "namespace/role", comma separated. Empty string means all allowed.
-dbSecretAllowedRoles: ""
+# Restrict which backend paths each namespace may read. This covers BOTH the
+# references in a ValsSecret (every backend, not just ref+k8s://) and the mount
+# and role named by a DbSecret, so that restricting one resource cannot be
+# sidestepped through the other.
+#
+# Semicolon-separated "namespace=prefix[,prefix...]" entries. A namespace of "*"
+# applies to every namespace, in addition to any namespace-specific entry.
+# Prefixes match on path-segment boundaries.
+#
+#   allowedBackendPaths: "team-a=ref+vault://database/creds/team-a,ref+k8s://team-a;*=ref+awssecrets://shared"
+#
+# Empty string (the default) allows every path the operator's backend credential
+# can read. Set this on any cluster where namespaces are not all equally trusted:
+# the operator holds one credential for all namespaces, so anybody who can create
+# a ValsSecret or DbSecret otherwise inherits its full reach.
+allowedBackendPaths: ""
 
 environmentSecret: ""
 

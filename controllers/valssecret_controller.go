@@ -63,6 +63,11 @@ type ValsSecretReconciler struct {
 	DefaultTTL               time.Duration
 	DisableNamespaceSync     bool
 	AllowedNamespacesForSync map[string]bool // empty = all namespaces allowed
+	// BackendAuthorizer restricts which backend paths a ValsSecret in a given
+	// namespace may read, across every backend. Shared with DbSecretReconciler so
+	// one allowlist governs both resources. A nil or unconfigured authorizer
+	// permits everything.
+	BackendAuthorizer *BackendAuthorizer
 
 	errorCounts map[string]int
 	errMu       sync.Mutex
@@ -142,6 +147,22 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	if currentSecret != nil && currentSecret.Name != "" && !r.hasSecretExpired(secret, currentSecret) {
 		return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
+	}
+
+	/* Authorise every reference before touching any backend, so a denied
+	   reference results in no read at all. Restricting a DbSecret's mount and role
+	   is worthless on its own: the same dynamic credentials are reachable through a
+	   plain `ref+vault://<mount>/creds/<role>` here. */
+	for k, v := range secret.Spec.Data {
+		if err := r.BackendAuthorizer.Authorize(secret.Namespace, v.Ref); err != nil {
+			dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
+			r.Log.Error(err, "Refusing to read backend reference",
+				"name", secret.Name, "namespace", secret.Namespace, "key", k)
+			if r.recordingEnabled(&secret) {
+				r.Recorder.Event(&secret, corev1.EventTypeWarning, "Denied", err.Error())
+			}
+			return ctrl.Result{}, nil
+		}
 	}
 
 	secretYaml := make(map[string]interface{})
