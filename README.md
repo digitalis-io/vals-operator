@@ -529,6 +529,19 @@ spec:
       userHost: "%"                     # default
       hosts:
         - mysql
+    - driver: clickhouse
+      loginCredentials:
+        secretName: clickhouse-creds
+        usernameKey: username           # the username defaults to 'default' if not provided
+        passwordKey: password
+      protocol: native                  # native (default, also 'tcp') or http
+      tls: preferred                    # preferred (default), disable, require or skip-verify
+      port: 9000                        # default 9000 native, 9440 native+TLS, 8123 http, 8443 https
+      usernameKey: username
+      passwordKey: password
+      hosts:
+        - clickhouse01                  # uses the `protocol` and `tls` settings above
+        - https://clickhouse02:8443     # a scheme on the host overrides them
     - driver: elastic
       loginCredentials:
         secretName: elastic-creds
@@ -542,3 +555,36 @@ spec:
         - my-elastic                    # this would be converted to http://my-elastic:9200
         - https://my-other-elastic:9200 # provide full URL instead
 ```
+
+### ClickHouse
+
+The ClickHouse driver connects over the native protocol on port `9000` by
+default and logs in as `default` when `loginCredentials.usernameKey` is
+omitted.
+
+Connection methods:
+
+| Setting | Values | Default port |
+|---|---|---|
+| `protocol: native` (or `tcp`) | native binary protocol | `9000`, or `9440` with TLS |
+| `protocol: http` | HTTP protocol | `8123`, or `8443` with TLS |
+
+TLS is selected with the `tls` field:
+
+| `tls` | Behaviour |
+|---|---|
+| `preferred` (default) | Connects over TLS and falls back to plaintext if the server does not offer it. The server certificate is not verified, matching the MySQL driver's `tls=preferred`. |
+| `disable` | Never uses TLS. |
+| `require` | Always uses TLS and verifies the server certificate. |
+| `skip-verify` | Always uses TLS without verifying the server certificate. |
+
+Each entry in `hosts` may carry its own scheme, which overrides `protocol` and
+`tls` for that host: `tcp://`, `native://`, `clickhouse://` (plaintext native),
+`tls://`, `clickhouses://` (native over TLS), `http://` and `https://`. A
+`host:port` entry overrides the `port` field. Hosts are tried in order until
+one succeeds.
+
+**Constraint:** `ALTER USER` only works for users created through SQL-driven
+access control. Users defined in `users.xml` cannot be altered at runtime, and
+rotation against such a user fails with an error from the server and is logged
+as a failed host.
