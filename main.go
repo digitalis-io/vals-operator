@@ -88,6 +88,8 @@ func main() {
 	var defaultTTL time.Duration
 	var disableNamespaceSync bool
 	var allowedNamespacesForSync string
+	var allowedVaultMounts string
+	var allowedVaultRoles string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -101,6 +103,12 @@ func main() {
 		"Disable cross-namespace ref+k8s:// references. Refs targeting a different namespace than the ValsSecret are rejected.")
 	flag.StringVar(&allowedNamespacesForSync, "allowed-namespaces-for-sync", "",
 		"Comma-separated list of namespaces that may be referenced via ref+k8s://. Empty means all allowed (unless -disable-namespace-sync is set).")
+	flag.StringVar(&allowedVaultMounts, "dbsecret-allowed-mounts", "",
+		"Comma-separated list of database mounts a DbSecret may request credentials from. "+
+			"Entries are either 'mount' (any namespace) or 'namespace/mount'. Empty means all allowed.")
+	flag.StringVar(&allowedVaultRoles, "dbsecret-allowed-roles", "",
+		"Comma-separated list of roles a DbSecret may request credentials for. "+
+			"Entries are either 'role' (any namespace) or 'namespace/role'. Empty means all allowed.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -139,6 +147,20 @@ func main() {
 	for _, ns := range nsSlice(allowedNamespacesForSync) {
 		if ns != "" {
 			allowedSyncNs[ns] = true
+		}
+	}
+
+	allowedMounts := make(map[string]bool)
+	for _, m := range nsSlice(allowedVaultMounts) {
+		if m != "" {
+			allowedMounts[m] = true
+		}
+	}
+
+	allowedRoles := make(map[string]bool)
+	for _, role := range nsSlice(allowedVaultRoles) {
+		if role != "" {
+			allowedRoles[role] = true
 		}
 	}
 
@@ -212,6 +234,8 @@ func main() {
 		ExcludeNamespaces:    excludeNs,
 		RecordChanges:        recordChanges,
 		DefaultTTL:           defaultTTL,
+		AllowedVaultMounts:   allowedMounts,
+		AllowedVaultRoles:    allowedRoles,
 		Log:                  ctrl.Log.WithName("controllers").WithName("vals-operator"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DbSecret")

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-logr/logr"
 	"github.com/gocql/gocql"
 
 	dbType "digitalis.io/vals-operator/db/types"
@@ -22,9 +21,7 @@ func quoteLiteral(literal string) string {
 
 // UpdateUserPassword updates the user's password
 func UpdateUserPassword(dbQuery dbType.DatabaseBackend) error {
-	var log logr.Logger
-
-	log = ctrl.Log.WithName("cassandra")
+	log := ctrl.Log.WithName("cassandra")
 
 	cluster := gocql.NewCluster(dbQuery.Hosts...)
 	if dbQuery.LoginPassword != "" {

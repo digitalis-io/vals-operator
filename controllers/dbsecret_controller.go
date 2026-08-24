@@ -20,13 +20,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"text/template"
 	"time"
 
-	sprig "github.com/Masterminds/sprig/v3"
 	"github.com/go-logr/logr"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -59,10 +59,24 @@ type DbSecretReconciler struct {
 	RecordChanges        bool
 	Recorder             record.EventRecorder
 	DefaultTTL           time.Duration
+	// AllowedVaultMounts restricts which database mounts a DbSecret may request
+	// credentials from. Entries are either `mount` (allowed in any namespace) or
+	// `namespace/mount` (allowed in that namespace only). Empty = all allowed.
+	AllowedVaultMounts map[string]bool
+	// AllowedVaultRoles restricts which roles a DbSecret may request. Entries are
+	// either `role` or `namespace/role`. Empty = all allowed.
+	AllowedVaultRoles map[string]bool
 
 	errorCounts map[string]int
 	errMu       sync.Mutex
 }
+
+// vaultPathSegment matches a single mount or role name. A segment must not
+// contain a path separator: the mount and role are interpolated into the Vault
+// path (`<mount>/creds/<role>`) and into lease IDs, so a value containing `/`
+// would let a DbSecret reach a different path than the one it names, and would
+// break lease ID parsing.
+var vaultPathSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 //+kubebuilder:rbac:groups=digitalis.io,resources=dbsecrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=digitalis.io,resources=dbsecrets/status,verbs=get;update;patch
@@ -140,6 +154,17 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	//! [finalizer]
 
+	/* Refuse to talk to the backend at all for a mount/role this DbSecret may not use.
+	   Checked after the finalizer block so an existing resource can still be deleted. */
+	if err := r.isVaultRefAllowed(&dbSecret); err != nil {
+		r.Log.Error(err, "Refusing to request credentials", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
+		if r.recordingEnabled(&dbSecret) {
+			r.Recorder.Event(&dbSecret, corev1.EventTypeWarning, "Denied", err.Error())
+		}
+		dmetrics.DbSecretError.WithLabelValues(dbSecret.Name, dbSecret.Namespace).SetToCurrentTime()
+		return ctrl.Result{}, nil
+	}
+
 	if currentSecret != nil && currentSecret.Name != "" {
 		shouldUpdate := false
 		canRenew := true
@@ -171,7 +196,7 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 		/* If the new secret doesn't have a template anymore, make sure it's deleted from the secret */
 		if len(dbSecret.Spec.Template) == 0 {
-			for k, _ := range currentSecret.Data {
+			for k := range currentSecret.Data {
 				if k != "username" && k != "password" {
 					delete(currentSecret.Data, k)
 				}
@@ -216,7 +241,9 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		r.Log.Error(err, "Failed to create secret", "name", dbSecret.Name, "namespace", dbSecret.Namespace)
 		dmetrics.DbSecretFailures.Inc()
 		dmetrics.DbSecretError.WithLabelValues(dbSecret.Name, dbSecret.Namespace).SetToCurrentTime()
-		return ctrl.Result{}, nil
+		/* Returned so the workqueue retries with backoff: swallowing this left the
+		   DbSecret wedged until its spec changed. */
+		return ctrl.Result{}, err
 	}
 
 	/* Patching resources to force a rollout if required */
@@ -234,33 +261,92 @@ func (r *DbSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
 }
 
+// isVaultRefAllowed returns nil if the DbSecret may request credentials for the
+// mount and role it names.
+//
+// A DbSecret is namespaced but the operator holds a single, cluster-wide token
+// for the secrets backend. Without a restriction, anybody able to create a
+// DbSecret in any namespace can mint credentials for every database mount and
+// role that token can read. The allowlists are opt-in so existing deployments
+// keep working, but the format check always applies.
+func (r *DbSecretReconciler) isVaultRefAllowed(sDef *digitalisiov1beta1.DbSecret) error {
+	mount := sDef.Spec.Vault.Mount
+	role := sDef.Spec.Vault.Role
+
+	if !vaultPathSegment.MatchString(mount) {
+		return fmt.Errorf("invalid vault mount %q: must match %s", mount, vaultPathSegment)
+	}
+	if !vaultPathSegment.MatchString(role) {
+		return fmt.Errorf("invalid vault role %q: must match %s", role, vaultPathSegment)
+	}
+
+	if len(r.AllowedVaultMounts) > 0 &&
+		!r.AllowedVaultMounts[mount] &&
+		!r.AllowedVaultMounts[fmt.Sprintf("%s/%s", sDef.Namespace, mount)] {
+		return fmt.Errorf("vault mount %q is not allowed in namespace %s", mount, sDef.Namespace)
+	}
+	if len(r.AllowedVaultRoles) > 0 &&
+		!r.AllowedVaultRoles[role] &&
+		!r.AllowedVaultRoles[fmt.Sprintf("%s/%s", sDef.Namespace, role)] {
+		return fmt.Errorf("vault role %q is not allowed in namespace %s", role, sDef.Namespace)
+	}
+
+	return nil
+}
+
+// leaseIdSuffix extracts the trailing identifier from a lease ID returned by
+// the secrets backend, which has the form `<mount>/creds/<role>/<id>`. Only the
+// last segment is stored on the secret; the mount and role are taken from the
+// DbSecret spec when the lease ID is rebuilt.
+//
+// The backend response is not trusted to have that exact shape: a mount path
+// with extra segments, or any other backend quirk, must not panic the operator.
+func leaseIdSuffix(leaseId string) (string, error) {
+	if leaseId == "" {
+		return "", fmt.Errorf("backend returned an empty lease id")
+	}
+	parts := strings.Split(leaseId, "/")
+	suffix := parts[len(parts)-1]
+	if len(parts) < 4 || suffix == "" {
+		return "", fmt.Errorf("backend returned a lease id in an unexpected format: %d segments", len(parts))
+	}
+	return suffix, nil
+}
+
+// leaseIdFor rebuilds the full lease ID for a secret from the mount and role in
+// the DbSecret spec plus the suffix stored on the secret. It returns an empty
+// string when the secret carries no lease.
+func leaseIdFor(sDef *digitalisiov1beta1.DbSecret, currentSecret *corev1.Secret) string {
+	if currentSecret == nil || currentSecret.Annotations[leaseIdLabel] == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/creds/%s/%s",
+		sDef.Spec.Vault.Mount,
+		sDef.Spec.Vault.Role,
+		currentSecret.Annotations[leaseIdLabel])
+}
+
 func (r *DbSecretReconciler) revokeLease(sDef *digitalisiov1beta1.DbSecret, currentSecret *corev1.Secret) error {
-	if currentSecret == nil || currentSecret.Name != "" {
+	if currentSecret == nil || currentSecret.Name == "" {
 		return nil
 	}
 
 	r.Log.Info(fmt.Sprintf("Revoking lease for %s in namespace %s", currentSecret.Name, currentSecret.Namespace))
 
-	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
+	leaseId := leaseIdFor(sDef, currentSecret)
+	if leaseId == "" {
 		return fmt.Errorf("cannot revoke credentials without lease Id: secret %s in namespace %s",
 			currentSecret.Name, currentSecret.Namespace)
 	}
-	leaseId := fmt.Sprintf("%s/creds/%s/%s",
-		sDef.Spec.Vault.Mount,
-		sDef.Spec.Vault.Role,
-		currentSecret.ObjectMeta.Annotations[leaseIdLabel])
 	return vault.RevokeDbCredentials(leaseId)
 }
 
 // renewLease will ask vault to renew the lease
 func (r *DbSecretReconciler) isLeaseValid(sDef *digitalisiov1beta1.DbSecret, currentSecret *corev1.Secret) bool {
-	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
+	leaseId := leaseIdFor(sDef, currentSecret)
+	if leaseId == "" {
 		return false
 	}
-	leaseId := fmt.Sprintf("%s/creds/%s/%s",
-		sDef.Spec.Vault.Mount,
-		sDef.Spec.Vault.Role,
-		currentSecret.ObjectMeta.Annotations[leaseIdLabel])
 	ok := vault.IsLeaseValid(leaseId)
 	if !ok {
 		r.Log.Info("Lease on secret no longer valid", "name", sDef.Name, "namespace", sDef.Namespace)
@@ -275,13 +361,10 @@ func (r *DbSecretReconciler) renewLease(sDef *digitalisiov1beta1.DbSecret, curre
 
 	r.Log.Info("Renewing lease on secret", "name", sDef.Name, "namespace", sDef.Namespace)
 
-	if currentSecret.ObjectMeta.Annotations[leaseIdLabel] == "" {
+	leaseId = leaseIdFor(sDef, currentSecret)
+	if leaseId == "" {
 		return fmt.Errorf("cannot renew without lease Id")
 	}
-	leaseId = fmt.Sprintf("%s/creds/%s/%s",
-		sDef.Spec.Vault.Mount,
-		sDef.Spec.Vault.Role,
-		currentSecret.ObjectMeta.Annotations[leaseIdLabel])
 
 	var increment int
 	increment, err = strconv.Atoi(currentSecret.ObjectMeta.Annotations[leaseDurationLabel])
@@ -314,6 +397,21 @@ func (r *DbSecretReconciler) renewLease(sDef *digitalisiov1beta1.DbSecret, curre
 	return err
 }
 
+// ownedByDbSecret returns nil if the existing secret was created by this
+// DbSecret, and an error if it belongs to anything else.
+//
+// upsertSecret has always set a controller reference, so every secret this
+// controller manages carries one; anything else is a secret we did not create.
+func ownedByDbSecret(sDef *digitalisiov1beta1.DbSecret, secret *corev1.Secret) error {
+	for _, ref := range secret.GetOwnerReferences() {
+		if ref.UID == sDef.GetUID() {
+			return nil
+		}
+	}
+	return fmt.Errorf("secret %s in namespace %s already exists and is not owned by DbSecret %s: refusing to overwrite it",
+		secret.Name, secret.Namespace, sDef.Name)
+}
+
 // upsertSecret will create or update a secret
 func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, creds vault.VaultDbSecret, secret *corev1.Secret) error {
 	var err error
@@ -322,6 +420,14 @@ func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, cre
 
 	if secret == nil {
 		secret = &corev1.Secret{}
+	} else if err := ownedByDbSecret(sDef, secret); err != nil {
+		/* Never take over a secret this DbSecret doesn't already own: spec.secretName
+		   is free-form, so otherwise naming an unrelated secret would overwrite it and
+		   adopt it for deletion. */
+		if r.recordingEnabled(sDef) {
+			r.Recorder.Event(sDef, corev1.EventTypeWarning, "Denied", err.Error())
+		}
+		return err
 	}
 
 	dataStr := make(map[string]string)
@@ -354,10 +460,15 @@ func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, cre
 		secret.ObjectMeta.Annotations = make(map[string]string)
 	}
 
+	leaseSuffix, err := leaseIdSuffix(creds.LeaseId)
+	if err != nil {
+		return err
+	}
+
 	utils.MergeMap(secret.ObjectMeta.Labels, sDef.ObjectMeta.Labels)
 	utils.MergeMap(secret.ObjectMeta.Annotations, sDef.ObjectMeta.Annotations)
 	secret.ObjectMeta.Annotations[managedByLabel] = "vals-operator"
-	secret.ObjectMeta.Annotations[leaseIdLabel] = strings.Split(creds.LeaseId, "/")[3]
+	secret.ObjectMeta.Annotations[leaseIdLabel] = leaseSuffix
 
 	secret.ObjectMeta.Annotations[leaseDurationLabel] = fmt.Sprintf("%d", creds.LeaseDuration)
 	secret.ObjectMeta.Annotations[lastUpdatedAnnotation] = time.Now().UTC().Format(timeLayout)
@@ -385,7 +496,7 @@ func (r *DbSecretReconciler) upsertSecret(sDef *digitalisiov1beta1.DbSecret, cre
 		return err
 	}
 	/* Prometheus */
-	f, err := strconv.ParseFloat(secret.Annotations[expiresOnLabel], 10)
+	f, err := strconv.ParseFloat(secret.Annotations[expiresOnLabel], 64)
 	if err != nil {
 		f = float64(time.Now().UnixNano())
 	}
@@ -431,11 +542,6 @@ func (r *DbSecretReconciler) getSecret(secretName string, namespace string) (*co
 	}
 
 	return &secret, nil
-}
-
-// secretNeedsUpdate Checks if the secret data or definition has changed from the current secret
-func (r *DbSecretReconciler) secretNeedsUpdate(sDef *digitalisiov1beta1.DbSecret, secret *corev1.Secret, newData map[string][]byte) bool {
-	return false
 }
 
 // deleteSecret will delete a secret given its namespace and name
@@ -511,6 +617,9 @@ func (r *DbSecretReconciler) rollout(sDef *digitalisiov1beta1.DbSecret, rolloutT
 			return err
 		}
 
+		if object.Spec.Template.Annotations == nil {
+			object.Spec.Template.Annotations = make(map[string]string)
+		}
 		object.Spec.Template.Annotations[restartedAnnotation] = time.Now().UTC().Format(timeLayout)
 		err = r.Update(r.Ctx, &object)
 		if err != nil {
@@ -540,7 +649,7 @@ func (r *DbSecretReconciler) renderTemplate(sDef *digitalisiov1beta1.DbSecret, d
 	/* Render any template given */
 	for k, v := range sDef.Spec.Template {
 		b := bytes.NewBuffer(nil)
-		t, err := template.New(k).Funcs(sprig.FuncMap()).Parse(v)
+		t, err := template.New(k).Funcs(utils.SafeTemplateFuncMap()).Parse(v)
 		if err != nil {
 			r.Log.Error(err, "Cannot parse template")
 			if r.recordingEnabled(sDef) {

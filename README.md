@@ -355,7 +355,11 @@ The `TTL` is optional and used to decrease the number of times the operator call
 The default encoding is `text` but you can change it to `base64` per secret reference. This way you can, for example, base64 encode large configuration files. If you omit the `ref+` prefix `vals-operator` will not process the string and it will be added to the secret as as literal string.
 
 You may also use GoLang templates to format a secret. You can inject as variables any of the keys referenced in the `data` section to format, for example, a configuration file.
-The [sprig](https://github.com/Masterminds/sprig/blob/master/docs/index.md) functions are supported.
+The [sprig](https://github.com/Masterminds/sprig/blob/master/docs/index.md) functions are supported, with three exceptions:
+`env`, `expandenv` and `getHostByName` are removed. Templates come from namespaced resources but are rendered inside the
+operator, so those functions would expose the operator's own environment — including its Vault/OpenBao token — to anybody
+able to create a `ValsSecret` or `DbSecret`. A template using one of them fails with `function "env" not defined`; put the
+value in your secrets backend and reference it from `data` instead.
 
 ## Vault/OpenBao database credentials
 
@@ -384,6 +388,60 @@ spec:
       name: cassandra-client
     - kind: StatefulSet
       name: cassandra-client-other
+```
+
+### Upgrade notes
+
+Three changes in the current release need action when upgrading an existing deployment.
+
+**Orphaned leases.** Earlier versions did not revoke a `DbSecret`'s lease when the credentials rotated or when the
+resource was deleted, so leases accumulated in the backend and stayed valid until their natural TTL. The operator has no
+record of those leases, so they must be cleared in the backend. List and inspect what is outstanding for a mount before
+revoking anything:
+
+```sh
+vault list sys/leases/lookup/<mount>/creds/<role>          # bao list ... for OpenBao
+vault lease lookup <mount>/creds/<role>/<lease-id>
+```
+
+Revoke the ones that no longer belong to a live `DbSecret`. To clear every lease under a role in one go — this
+invalidates credentials currently in use, so roll out the consuming workloads afterwards:
+
+```sh
+vault lease revoke -prefix <mount>/creds/<role>
+```
+
+**Templates using `env`.** The `env`, `expandenv` and `getHostByName` sprig functions are no longer available in
+`ValsSecret` and `DbSecret` templates. A template using one now fails with `function "env" not defined`. Move the value
+into your secrets backend and reference it from `data`.
+
+**`rollout[].kind: Pod`.** Only `Deployment` and `StatefulSet` are accepted. `Pod` appeared in the field documentation
+but was never implemented — it was accepted by the API and then failed during reconciliation. A `DbSecret` using it is
+now rejected at apply time, so update those resources before upgrading the CRDs.
+
+### Restricting which databases a DbSecret can reach
+
+The operator holds a single token for the secrets backend, but `DbSecret` is a namespaced resource. By default any
+`DbSecret` in any watched namespace can request credentials for any mount and role that token is allowed to read. On a
+cluster where namespaces are not all equally trusted, restrict this:
+
+```yaml
+# Helm values
+dbSecretAllowedMounts: "cass000,team-a/postgres"  # `mount` = any namespace, `namespace/mount` = that namespace only
+dbSecretAllowedRoles: "readonly,team-a/app"
+```
+
+Or as operator flags directly:
+
+```sh
+vals-operator -dbsecret-allowed-mounts=cass000,team-a/postgres -dbsecret-allowed-roles=readonly
+```
+
+An empty value (the default) allows everything. A `DbSecret` naming a mount or role outside the list is rejected without
+contacting the backend, and the reason is recorded as an event on the resource:
+
+```sh
+kubectl describe dbsecret my-db
 ```
 
 ## Advance config: password rotation

@@ -31,7 +31,7 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          {{- if or .Values.args .Values.disableNamespaceSync .Values.allowedNamespacesForSync }}
+          {{- if or .Values.args .Values.disableNamespaceSync .Values.allowedNamespacesForSync .Values.dbSecretAllowedMounts .Values.dbSecretAllowedRoles }}
           args:
             {{- if .Values.args }}
             {{- toYaml .Values.args | nindent 12 }}
@@ -41,6 +41,12 @@ spec:
             {{- end }}
             {{- if .Values.allowedNamespacesForSync }}
             - -allowed-namespaces-for-sync={{ .Values.allowedNamespacesForSync }}
+            {{- end }}
+            {{- if .Values.dbSecretAllowedMounts }}
+            - -dbsecret-allowed-mounts={{ .Values.dbSecretAllowedMounts }}
+            {{- end }}
+            {{- if .Values.dbSecretAllowedRoles }}
+            - -dbsecret-allowed-roles={{ .Values.dbSecretAllowedRoles }}
             {{- end }}
           {{- end }}
           {{- if .Values.environmentSecret }}

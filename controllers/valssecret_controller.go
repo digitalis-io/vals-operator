@@ -48,7 +48,6 @@ import (
 	dbType "digitalis.io/vals-operator/db/types"
 	dmetrics "digitalis.io/vals-operator/metrics"
 	"digitalis.io/vals-operator/utils"
-	sprig "github.com/Masterminds/sprig/v3"
 )
 
 // ValsSecretReconciler reconciles a ValsSecret object
@@ -201,7 +200,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	/* Render any template given */
 	for k, v := range secret.Spec.Template {
 		b := bytes.NewBuffer(nil)
-		t, err := template.New(k).Funcs(sprig.FuncMap()).Parse(v)
+		t, err := template.New(k).Funcs(utils.SafeTemplateFuncMap()).Parse(v)
 		if err != nil {
 			dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 			r.Log.Error(err, "Cannot parse template", "name", secret.Name, "namespace", secret.Namespace)
