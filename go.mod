@@ -50,7 +50,7 @@ require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	filippo.io/hpke v0.4.0 // indirect
 	github.com/1Password/connect-sdk-go v1.5.3 // indirect
-	github.com/1password/onepassword-sdk-go v0.4.0 // indirect
+	github.com/1password/onepassword-sdk-go v0.4.1 // indirect
 	github.com/AlecAivazis/survey/v2 v2.3.7 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0 // indirect

@@ -44,6 +44,10 @@ Vals-operator uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A `DbSecret` whose Secret could not be written is now retried with backoff instead of being left until its spec changed.
 - **Breaking:** `spec.rollout[].kind` on a `DbSecret` is now restricted to `Deployment` and `StatefulSet` at the API level. `Pod` was named in the field documentation but was never implemented — a `DbSecret` using it was accepted and then failed during reconciliation. Such a resource is now rejected by `kubectl apply` instead.
 
+### Fixed
+
+- The container image build failed for every architecture because `github.com/1password/onepassword-sdk-go` v0.4.0 raises a deliberate compile-time error when built with `CGO_ENABLED=0`. Upgraded to v0.4.1, which returns a runtime error from `WithDesktopAppIntegration` instead, restoring the cross-compiled release build.
+
 ## [0.8.1] - 2026-02-10
 
 ### Added
