@@ -1,0 +1,59 @@
+name: clickhouse
+
+on:
+  pull_request:
+    paths:
+      - 'db/**'
+      - 'apis/**'
+      - 'controllers/**'
+      - 'hack/clickhouse-test-server.sh'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/clickhouse.yml'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  clickhouse:
+    name: ClickHouse backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .go-version
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Unit tests
+        run: go test -race ./db/...
+
+      # Started from a script rather than a service container because the
+      # tests need a server configuration (SQL-driven access control, remote
+      # access and TLS) that can only be applied once the container is up.
+      - name: Start ClickHouse
+        run: ./hack/clickhouse-test-server.sh start
+
+      - name: Integration tests
+        env:
+          CLICKHOUSE_NATIVE_ADDR: 127.0.0.1:9000
+          CLICKHOUSE_NATIVE_TLS_ADDR: 127.0.0.1:9440
+          CLICKHOUSE_HTTP_ADDR: 127.0.0.1:8123
+          CLICKHOUSE_HTTPS_ADDR: 127.0.0.1:8443
+          CLICKHOUSE_NATIVE_ADDR_IS_DEFAULT_PORT: "1"
+          CLICKHOUSE_LOGIN_PASSWORD: clickhouse
+        run: go test -tags integration -race -v ./db/clickhouse/...
+
+      - name: ClickHouse server logs
+        if: failure()
+        run: docker logs vals-clickhouse-test
+
+      - name: Stop ClickHouse
+        if: always()
+        run: ./hack/clickhouse-test-server.sh stop

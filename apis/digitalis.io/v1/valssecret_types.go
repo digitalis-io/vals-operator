@@ -54,10 +54,20 @@ type Database struct {
 	Port int `json:"port,omitempty"`
 	// Key in the secret containing the database username
 	UsernameKey string `json:"usernameKey,omitempty"`
-	// Key in the secret containing the database username
+	// Key in the secret containing the database password
 	PasswordKey string `json:"passwordKey"`
 	// Used for MySQL only, the host part for the username
 	UserHost string `json:"userHost,omitempty"`
+	// Used for ClickHouse only, the wire protocol to use: native (also
+	// accepted as tcp or clickhouse) or http. Defaults to native. A scheme
+	// on a host entry overrides this.
+	// +kubebuilder:validation:Enum=native;tcp;clickhouse;http
+	Protocol string `json:"protocol,omitempty"`
+	// Used for ClickHouse only, the TLS mode: preferred (default, TLS with
+	// a plaintext fallback), disable, require or skip-verify. A scheme on a
+	// host entry overrides this.
+	// +kubebuilder:validation:Enum=preferred;disable;require;skip-verify
+	TLS string `json:"tls,omitempty"`
 	// List of hosts to connect to, they'll be tried in sequence until one succeeds
 	Hosts []string `json:"hosts"`
 }

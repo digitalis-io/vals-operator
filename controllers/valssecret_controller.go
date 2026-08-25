@@ -413,6 +413,8 @@ func (r *ValsSecretReconciler) updateDatabases(sDef *secretv1.ValsSecret, secret
 				Driver:        sDef.Spec.Databases[db].Driver,
 				Hosts:         sDef.Spec.Databases[db].Hosts,
 				Port:          sDef.Spec.Databases[db].Port,
+				Protocol:      sDef.Spec.Databases[db].Protocol,
+				TLS:           sDef.Spec.Databases[db].TLS,
 			}
 			if err := valsDb.UpdateUserPassword(dbQuery); err != nil {
 				r.Log.Error(err, "Cannot update DB password", "name", secret.Name, "namespace", secret.Namespace)
