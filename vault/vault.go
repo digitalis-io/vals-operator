@@ -23,13 +23,6 @@ var log logr.Logger
 var client SecretsClient
 var backendType BackendType
 
-func getEnv(key string, fallback string) string {
-	if value, ok := os.LookupEnv(key); ok {
-		return value
-	}
-	return fallback
-}
-
 // VaultDbSecret represents database credentials from Vault/OpenBao
 type VaultDbSecret struct {
 	LeaseId       string `json:"lease_id"`

@@ -48,6 +48,7 @@ The operator binary accepts the following flags. All flags are optional unless n
 | `-leader-elect` | bool | `false` | Enables leader election, ensuring only one active controller instance when running multiple replicas. |
 | `-disable-namespace-sync` | bool | `false` | Blocks all cross-namespace `ref+k8s://` references. See [Cross-Namespace Reference Security](#cross-namespace-reference-security). |
 | `-allowed-namespaces-for-sync` | string | `""` | Comma-separated allowlist of namespaces that may be referenced via `ref+k8s://`. See [Cross-Namespace Reference Security](#cross-namespace-reference-security). |
+| `-allowed-backend-paths` | string | `""` | Restricts which backend paths each namespace may read, covering both `ValsSecret` references (all backends) and `DbSecret` mounts/roles. Semicolon-separated `namespace=prefix[,prefix...]` entries; `*` applies to all namespaces. See [Restricting which backend paths a namespace can read](#restricting-which-backend-paths-a-namespace-can-read). |
 
 ## Cross-Namespace Reference Security
 
@@ -355,7 +356,11 @@ The `TTL` is optional and used to decrease the number of times the operator call
 The default encoding is `text` but you can change it to `base64` per secret reference. This way you can, for example, base64 encode large configuration files. If you omit the `ref+` prefix `vals-operator` will not process the string and it will be added to the secret as as literal string.
 
 You may also use GoLang templates to format a secret. You can inject as variables any of the keys referenced in the `data` section to format, for example, a configuration file.
-The [sprig](https://github.com/Masterminds/sprig/blob/master/docs/index.md) functions are supported.
+The [sprig](https://github.com/Masterminds/sprig/blob/master/docs/index.md) functions are supported, with three exceptions:
+`env`, `expandenv` and `getHostByName` are removed. Templates come from namespaced resources but are rendered inside the
+operator, so those functions would expose the operator's own environment — including its Vault/OpenBao token — to anybody
+able to create a `ValsSecret` or `DbSecret`. A template using one of them fails with `function "env" not defined`; put the
+value in your secrets backend and reference it from `data` instead.
 
 ## Vault/OpenBao database credentials
 
@@ -385,6 +390,86 @@ spec:
     - kind: StatefulSet
       name: cassandra-client-other
 ```
+
+### Upgrade notes
+
+Three changes in the current release need action when upgrading an existing deployment.
+
+**Orphaned leases.** Earlier versions did not revoke a `DbSecret`'s lease when the credentials rotated or when the
+resource was deleted, so leases accumulated in the backend and stayed valid until their natural TTL. The operator has no
+record of those leases, so they must be cleared in the backend. List and inspect what is outstanding for a mount before
+revoking anything:
+
+```sh
+vault list sys/leases/lookup/<mount>/creds/<role>          # bao list ... for OpenBao
+vault lease lookup <mount>/creds/<role>/<lease-id>
+```
+
+Revoke the ones that no longer belong to a live `DbSecret`. To clear every lease under a role in one go — this
+invalidates credentials currently in use, so roll out the consuming workloads afterwards:
+
+```sh
+vault lease revoke -prefix <mount>/creds/<role>
+```
+
+**Templates using `env`.** The `env`, `expandenv` and `getHostByName` sprig functions are no longer available in
+`ValsSecret` and `DbSecret` templates. A template using one now fails with `function "env" not defined`. Move the value
+into your secrets backend and reference it from `data`.
+
+**`rollout[].kind: Pod`.** Only `Deployment` and `StatefulSet` are accepted. `Pod` appeared in the field documentation
+but was never implemented — it was accepted by the API and then failed during reconciliation. A `DbSecret` using it is
+now rejected at apply time, so update those resources before upgrading the CRDs.
+
+### Restricting which backend paths a namespace can read
+
+The operator authenticates to Vault/OpenBao (and every other backend) **once at startup**, with a single credential
+reused for every namespace. That credential's own policy is the real security boundary: anybody who can create a
+`ValsSecret` or a `DbSecret` in a watched namespace can read anything it can read.
+
+`-allowed-backend-paths` narrows that reach per namespace. It covers **both** resources — every `ref+...://` reference in
+a `ValsSecret`, across all backends, and the mount and role named by a `DbSecret`. Restricting only one of them achieves
+nothing, because the same dynamic database credentials are reachable either way:
+
+```yaml
+# These two request identical credentials, so both must be governed by the same rule.
+kind: DbSecret
+spec:
+  vault: {mount: database, role: other-tenant-role}
+---
+kind: ValsSecret
+spec:
+  data:
+    password: {ref: "ref+vault://database/creds/other-tenant-role#/password"}
+```
+
+Configure it as semicolon-separated `namespace=prefix[,prefix...]` entries. A namespace of `*` applies to every
+namespace, in addition to any namespace-specific entry:
+
+```yaml
+# Helm values
+allowedBackendPaths: "team-a=ref+vault://database/creds/team-a,ref+k8s://team-a;team-b=ref+vault://database/creds/team-b;*=ref+awssecrets://shared"
+```
+
+Or as an operator flag directly:
+
+```sh
+vals-operator -allowed-backend-paths='team-a=ref+vault://database/creds/team-a;*=ref+awssecrets://shared'
+```
+
+Prefixes match on path-segment boundaries, so `ref+vault://database/creds/team-a` does not cover
+`ref+vault://database/creds/team-abc`.
+
+An empty value (the default) allows every path, so upgrading changes nothing until you configure it. A namespace with no
+matching entry is denied once the flag is set. Denied references are rejected **before any backend call is made**, and
+the reason is recorded as an event naming the namespace and the rejected path:
+
+```sh
+kubectl describe valssecret my-secret
+kubectl describe dbsecret my-db
+```
+
+Note that `-disable-namespace-sync` and `-allowed-namespaces-for-sync` are a different, narrower control: they apply
+only to `ref+k8s://` references and do not restrict any other backend.
 
 ## Advance config: password rotation
 

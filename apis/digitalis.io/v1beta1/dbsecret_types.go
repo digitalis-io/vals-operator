@@ -26,6 +26,8 @@ import (
 // DbSecretSpec defines the desired state of DbSecret
 type DbSecretSpec struct {
 	// Name can override the secret name, defaults to manifests.name
+	//+kubebuilder:validation:MaxLength=253
+	//+kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
 	SecretName string            `json:"secretName,omitempty"`
 	Vault      DbVaultConfig     `json:"vault"`
 	Template   map[string]string `json:"template,omitempty"`
@@ -55,24 +57,28 @@ spec:
 */
 
 type DbRolloutTarget struct {
-	// Kind is either Deployment, Pod or StatefulSet
+	// Kind is either Deployment or StatefulSet
+	//+kubebuilder:validation:Enum=Deployment;StatefulSet;deployment;statefulset
 	Kind string `json:"kind"`
 	// Name is the object name
+	//+kubebuilder:validation:MinLength=1
+	//+kubebuilder:validation:MaxLength=253
 	Name string `json:"name"`
 }
 
 type DbVaultConfig struct {
-	// Role is the vault role used to connect to the database
+	// Role is the vault role used to connect to the database.
+	// Must be a single path segment: it is interpolated into the backend path.
+	//+kubebuilder:validation:MinLength=1
+	//+kubebuilder:validation:MaxLength=253
+	//+kubebuilder:validation:Pattern=`^[A-Za-z0-9][A-Za-z0-9._-]*$`
 	Role string `json:"role"`
-	// Mount is the vault database
+	// Mount is the vault database.
+	// Must be a single path segment: it is interpolated into the backend path.
+	//+kubebuilder:validation:MinLength=1
+	//+kubebuilder:validation:MaxLength=253
+	//+kubebuilder:validation:Pattern=`^[A-Za-z0-9][A-Za-z0-9._-]*$`
 	Mount string `json:"mount"`
-}
-
-type DbSecretRollout struct {
-	// Kind if the object kind such as Deployment
-	Kind string `json:"kind"`
-	// Name is the object name
-	Name string `json:"name"`
 }
 
 // DbSecretStatus defines the observed state of DbSecret

@@ -8,14 +8,12 @@ import (
 	"regexp"
 	"sort"
 	"text/template"
-
-	"github.com/Masterminds/sprig"
 )
 
 // StringMapsMatch returns true if the provided maps contain the same keys and values, otherwise false
 func StringMapsMatch(m1, m2 map[string]string, ignoreKeys []string) bool {
 	// if both are empty then they must match
-	if (m1 == nil || len(m1) == 0) && (m2 == nil || len(m2) == 0) {
+	if len(m1) == 0 && len(m2) == 0 {
 		return true
 	}
 
@@ -141,7 +139,7 @@ func CreateFakeHash(m map[string]string) string {
 	/* Render any template given with fake username and password */
 	for k, v := range m {
 		b := bytes.NewBuffer(nil)
-		t, err := template.New(k).Funcs(sprig.FuncMap()).Parse(v)
+		t, err := template.New(k).Funcs(SafeTemplateFuncMap()).Parse(v)
 		if err != nil {
 			return ""
 		}
@@ -149,7 +147,7 @@ func CreateFakeHash(m map[string]string) string {
 			return ""
 		}
 
-		data[k] = string(b.Bytes())
+		data[k] = b.String()
 	}
 
 	return SecretHashString(data)
