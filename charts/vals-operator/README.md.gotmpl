@@ -1,0 +1,45 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.versionBadge" . }}{{ template "chart.typeBadge" . }}{{ template "chart.appVersionBadge" . }}
+
+## OCI Registry
+
+This chart is available as an OCI artifact. Helm 3.8+ consumers can install directly without adding a Helm repository:
+
+```bash
+helm install vals-operator oci://ghcr.io/digitalis-io/helm-charts/vals-operator --version <version>
+```
+
+The traditional Helm repository at `https://digitalis-io.github.io/helm-charts` remains available for Helm versions earlier than 3.8.
+
+This helm chart installs the Digitalis Vals Operator to manage and sync secrets from supported backends into Kubernetes.
+
+Full documentation: [docs/index.md](https://github.com/digitalis-io/vals-operator/blob/main/docs/index.md).
+
+## About Vals-Operator
+
+Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/helmfile/vals), it's a tool we use daily to keep secrets stored securely. Inspired by this tool, we have created an operator to manage Kubernetes secrets.
+
+*vals-operator* syncs secrets from any secrets store supported by [vals](https://github.com/helmfile/vals) into Kubernetes. Also, `vals-operator` supports database secrets as provider by [HashiCorp Vault Secret Engine](https://developer.hashicorp.com/vault/docs/secrets/databases).
+
+## Backend configuration
+
+The operator needs credentials for at least one secrets backend. See
+[Secrets backends](https://github.com/digitalis-io/vals-operator/blob/main/docs/backends.md).
+
+On any cluster where namespaces are not all equally trusted, also set `allowedBackendPaths` and
+restrict cross-namespace `ref+k8s://` references — see
+[Security](https://github.com/digitalis-io/vals-operator/blob/main/docs/security.md).
+
+{{ template "chart.maintainersSection" . }}
+
+{{ template "chart.requirementsSection" . }}
+
+{{ template "chart.valuesSection" . }}
+
+## Support
+
+Maintained by [Digitalis.io](https://digitalis.io). For commercial support, consulting or managed
+services, get in touch at [digitalis.io/contact](https://digitalis.io/contact).
+
+{{ template "helm-docs.versionFooter" . }}

@@ -83,5 +83,12 @@ you will need to pass on the annotation as a parameter:
 
 ```sh
 helm upgrade --install vals-operator --create-namespace -n vals-operator \
-  --set serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=arn:aws:iam::MY-ACCOUNT:role/vals-read-secrets
+  --set serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn=arn:aws:iam::MY-ACCOUNT:role/vals-read-secrets \
+  oci://ghcr.io/digitalis-io/helm-charts/vals-operator
 ```
+
+With the annotation in place the operator picks up its AWS credentials from the pod's
+web identity token — no `AWS_ACCESS_KEY_ID` is needed.
+
+See [Installation](../installation.md) for the other install methods, and
+[Secrets backends](../backends.md) for backends other than AWS.
