@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	ch "github.com/ClickHouse/clickhouse-go/v2"
 
@@ -23,6 +24,10 @@ import (
 //	go test -tags integration -race ./db/clickhouse/...
 //
 // hack/clickhouse-test-server.sh starts a server configured this way.
+// testTimeout bounds every server call the tests make, so an unresponsive
+// server fails the test instead of hanging it.
+const testTimeout = 10 * time.Second
+
 func addrOrSkip(t *testing.T, env string) string {
 	t.Helper()
 	addr := os.Getenv(env)
@@ -58,7 +63,10 @@ func canAuthenticate(t *testing.T, addr, username, password string) bool {
 	defer func() {
 		_ = conn.Close()
 	}()
-	return conn.Ping(context.Background()) == nil
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	return conn.Ping(ctx) == nil
 }
 
 func createUser(t *testing.T, addr, username, password string) {
@@ -74,7 +82,9 @@ func createUser(t *testing.T, addr, username, password string) {
 		_ = conn.Close()
 	}()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
 	if err := conn.Exec(ctx, "DROP USER IF EXISTS "+quoteIdentifier(username)); err != nil {
 		t.Fatalf("cannot drop user: %v", err)
 	}
@@ -82,7 +92,9 @@ func createUser(t *testing.T, addr, username, password string) {
 		t.Fatalf("cannot create user: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = conn.Exec(context.Background(), "DROP USER IF EXISTS "+quoteIdentifier(username))
+		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+		defer cancel()
+		_ = conn.Exec(ctx, "DROP USER IF EXISTS "+quoteIdentifier(username))
 	})
 }
 

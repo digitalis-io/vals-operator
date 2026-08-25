@@ -184,7 +184,7 @@ func parseProtocol(protocol string) (ch.Protocol, error) {
 	switch strings.ToLower(strings.TrimSpace(protocol)) {
 	case "", "tcp", "native", "clickhouse":
 		return ch.Native, nil
-	case "http", "https":
+	case "http":
 		return ch.HTTP, nil
 	}
 	return ch.Native, fmt.Errorf("unsupported clickhouse protocol %q", protocol)

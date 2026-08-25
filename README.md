@@ -532,7 +532,7 @@ spec:
     - driver: clickhouse
       loginCredentials:
         secretName: clickhouse-creds
-        usernameKey: username           # the username defaults to 'default' if not provided
+        usernameKey: username           # omit this key to log in as the ClickHouse user 'default'
         passwordKey: password
       protocol: native                  # native (default, also 'tcp') or http
       tls: preferred                    # preferred (default), disable, require or skip-verify
