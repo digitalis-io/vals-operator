@@ -31,6 +31,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/helmfile/vals"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -68,6 +69,8 @@ type ValsSecretReconciler struct {
 	// one allowlist governs both resources. A nil or unconfigured authorizer
 	// permits everything.
 	BackendAuthorizer *BackendAuthorizer
+	// TargetPolicy gates and allow-lists spec.target. Nil disables the feature.
+	TargetPolicy *TargetPolicy
 
 	errorCounts map[string]int
 	errMu       sync.Mutex
@@ -115,7 +118,13 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		r.clearErrorCount(&secret)
 		if utils.ContainsString(secret.GetFinalizers(), valsSecretFinalizerName) {
 			// our finalizer is present, so lets handle any external dependency
-			if err := r.deleteSecret(ctx, &secret); err != nil {
+			var err error
+			if secret.Spec.Target != nil {
+				err = r.releaseTarget(ctx, &secret)
+			} else {
+				err = r.deleteSecret(ctx, &secret)
+			}
+			if err != nil {
 				r.Log.Error(err, "Error deleting from Vals-Secret")
 				return ctrl.Result{}, client.IgnoreNotFound(err)
 			}
@@ -140,13 +149,26 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	} else {
 		secretName = secret.Name
 	}
-	currentSecret, err := r.getSecret(secretName, secret.GetNamespace())
-	if client.IgnoreNotFound(err) != nil {
-		return ctrl.Result{}, err
-	}
+	if secret.Spec.Target != nil {
+		// Custom target: the Secret path is not used. Skip the backend read
+		// entirely while the last apply is within TTL and the spec is unchanged.
+		if !r.targetExpired(&secret) {
+			return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
+		}
+		// Fail fast before touching any backend when the target is not allowed.
+		if _, err := r.resolveTarget(secret.Spec.Target); err != nil {
+			_ = r.reconcileTarget(ctx, &secret, nil, err)
+			return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
+		}
+	} else {
+		currentSecret, err := r.getSecret(secretName, secret.GetNamespace())
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
 
-	if currentSecret != nil && currentSecret.Name != "" && !r.hasSecretExpired(secret, currentSecret) {
-		return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
+		if currentSecret != nil && currentSecret.Name != "" && !r.hasSecretExpired(secret, currentSecret) {
+			return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
+		}
 	}
 
 	/* Authorise every reference before touching any backend, so a denied
@@ -218,6 +240,14 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 	}
 
+	if secret.Spec.Target != nil {
+		if err := r.reconcileTarget(ctx, &secret, dataStr, nil); err != nil {
+			return r.errorBackoff(&secret)
+		}
+		r.clearErrorCount(&secret)
+		return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
+	}
+
 	/* Render any template given */
 	for k, v := range secret.Spec.Template {
 		b := bytes.NewBuffer(nil)
@@ -270,6 +300,28 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 	r.clearErrorCount(&secret)
 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
+}
+
+// targetExpired reports whether a custom target must be re-evaluated: no
+// successful apply yet, the ValsSecret generation changed since, the force
+// annotation is set, or the TTL elapsed.
+func (r *ValsSecretReconciler) targetExpired(sDef *secretv1.ValsSecret) bool {
+	st := sDef.Status.Target
+	if st == nil || st.LastApplied.IsZero() {
+		return true
+	}
+	ready := meta.FindStatusCondition(sDef.Status.Conditions, secretv1.ConditionReady)
+	if ready == nil || ready.Status != metav1.ConditionTrue || ready.ObservedGeneration != sDef.Generation {
+		return true
+	}
+	if sDef.GetAnnotations()[forceCreateAnnotation] == "true" {
+		return true
+	}
+	ttl := time.Duration(sDef.Spec.TTL) * time.Second
+	if sDef.Spec.TTL <= 0 {
+		ttl = r.DefaultTTL
+	}
+	return time.Since(st.LastApplied.Time) >= ttl
 }
 
 func (r *ValsSecretReconciler) getSecret(secretName string, namespace string) (*corev1.Secret, error) {

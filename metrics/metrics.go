@@ -87,3 +87,30 @@ var (
 			Help: "Timestamp of when the secret could not be deleted",
 		}, []string{"secret", "namespace"})
 )
+
+var (
+	// TargetApplyTotal counts custom target applies by result ("success"/"error").
+	TargetApplyTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "vals_operator_target_apply_total",
+			Help: "Number of custom target applies by result",
+		},
+		[]string{"secret", "namespace", "kind", "mode", "result"},
+	)
+	// TargetError is the timestamp of the last custom target error, 0 when healthy.
+	TargetError = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "vals_operator_target_error",
+			Help: "Timestamp of the last custom target error, 0 when healthy",
+		},
+		[]string{"secret", "namespace"},
+	)
+	// TargetLastApplied is the timestamp of the last successful custom target apply.
+	TargetLastApplied = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "vals_operator_target_last_applied_seconds",
+			Help: "Timestamp of the last successful custom target apply",
+		},
+		[]string{"secret", "namespace", "kind"},
+	)
+)

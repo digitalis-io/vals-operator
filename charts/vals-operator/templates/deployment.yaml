@@ -31,7 +31,7 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          {{- if or .Values.args .Values.disableNamespaceSync .Values.allowedNamespacesForSync .Values.allowedBackendPaths }}
+          {{- if or .Values.args .Values.disableNamespaceSync .Values.allowedNamespacesForSync .Values.allowedBackendPaths .Values.customTargets.enabled }}
           args:
             {{- if .Values.args }}
             {{- toYaml .Values.args | nindent 12 }}
@@ -44,6 +44,11 @@ spec:
             {{- end }}
             {{- if .Values.allowedBackendPaths }}
             - -allowed-backend-paths={{ .Values.allowedBackendPaths }}
+            {{- end }}
+            {{- if .Values.customTargets.enabled }}
+            - -enable-custom-targets
+            - -allowed-target-resources={{ include "vals-operator.allowedTargetResources" . }}
+            - -target-dry-run={{ .Values.customTargets.dryRun }}
             {{- end }}
           {{- end }}
           {{- if .Values.environmentSecret }}

@@ -21,6 +21,9 @@ The operator binary accepts the following flags. All flags are optional unless n
 | `-disable-namespace-sync` | bool | `false` | Blocks all cross-namespace `ref+k8s://` references. See [Cross-namespace references](security.md#cross-namespace-references). |
 | `-allowed-namespaces-for-sync` | string | `""` | Comma-separated allowlist of namespaces that may be referenced via `ref+k8s://`. See [Cross-namespace references](security.md#cross-namespace-references). |
 | `-allowed-backend-paths` | string | `""` | Restricts which backend paths each namespace may read, covering both `ValsSecret` references (all backends) and `DbSecret` mounts/roles. Semicolon-separated `namespace=prefix[,prefix...]` entries; `*` applies to all namespaces. See [Restricting backend paths](security.md#restricting-backend-paths). |
+| `-enable-custom-targets` | bool | `false` | Allow `ValsSecret.spec.target` to write into resources other than Secrets. See [Custom targets](security.md#custom-targets). |
+| `-allowed-target-resources` | string | `""` | Comma-separated `resource.group` list that `spec.target` may write, e.g. `configmaps,flinkdeployments.flink.apache.org`. Empty allows nothing. |
+| `-target-dry-run` | bool | `true` | Server-side dry-run before applying a custom target. |
 | `-kubeconfig` | string | `""` | Path to a kubeconfig. Only required when running out of cluster. |
 | `-zap-devel` | bool | `true` | Development log defaults: console encoder, debug level, stack traces at warn. |
 | `-zap-encoder` | string | — | Log encoding, `json` or `console`. |
@@ -79,6 +82,9 @@ whatever `args` contains.
 | `disableNamespaceSync` | bool | `false` | Renders `-disable-namespace-sync`. Blocks all cross-namespace `ref+k8s://` references. |
 | `allowedNamespacesForSync` | string | `""` | Renders `-allowed-namespaces-for-sync`. Example: `"shared-secrets,platform"`. |
 | `allowedBackendPaths` | string | `""` | Renders `-allowed-backend-paths`. Example: `"team-a=ref+vault://database/creds/team-a;*=ref+awssecrets://shared"`. See [Security](security.md#restricting-backend-paths). |
+| `customTargets.enabled` | bool | `false` | Renders `-enable-custom-targets`. See [Custom targets](security.md#custom-targets). |
+| `customTargets.dryRun` | bool | `true` | Renders `-target-dry-run`. |
+| `customTargets.allowedResources` | list | `[]` | Resources `spec.target` may write; each entry is `{resource, group}` (`group: ""` for core). Renders both `-allowed-target-resources` and the matching ClusterRole rules. Example: `[{resource: configmaps, group: ""}, {resource: flinkdeployments, group: flink.apache.org}]`. |
 
 ### Backend configuration
 

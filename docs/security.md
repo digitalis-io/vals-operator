@@ -35,6 +35,7 @@ the result written into a Secret in their own namespace.
 | A `DbSecret` overwrites an unrelated Secret by naming it in `secretName` | The operator refuses to write to a Secret it does not own. |
 | Credentials outlive the resource that requested them | Vault/OpenBao leases are revoked on rotation and on deletion. Leases orphaned by versions before this behaviour existed must be revoked in the backend — see [Upgrade notes](upgrading.md). |
 | The operator reaches namespaces it has no business in | `-watch-namespaces`, `-exclude-namespaces` |
+| A tenant uses `spec.target` to write into a resource type it should not, or to a privileged kind | [`-enable-custom-targets`, `-allowed-target-resources`](#custom-targets); RBAC groups, `apiextensions`, ServiceAccounts, Pods, Nodes, Namespaces and PersistentVolumes can never be targeted; targets are same-namespace only |
 | A tampered image or chart is deployed | Cosign signatures and SBOM attestations on every release — see [Installation](installation.md#verifying-signatures). |
 
 ### Out of scope
@@ -163,6 +164,41 @@ consulted at all.
 
 Same-namespace references are always allowed in every configuration.
 
+## Custom targets
+
+[`spec.target`](usage.md#custom-targets) lets a `ValsSecret` write backend values into
+resources other than Secrets. It is disabled unless the operator runs with:
+
+| Flag | Helm value | Description |
+|---|---|---|
+| `-enable-custom-targets` | `customTargets.enabled` | Feature gate. Off: every `spec.target` is rejected with `Ready=False/FeatureDisabled` and nothing is read from the backend. |
+| `-allowed-target-resources` | `customTargets.allowedResources` | Comma-separated `resource.group` list (core group: `configmaps`), e.g. `configmaps,flinkdeployments.flink.apache.org`. Empty means nothing is allowed, even with the gate on. The chart renders the operator's ClusterRole from the same list. |
+| `-target-dry-run` | `customTargets.dryRun` | Server-side dry-run before every apply (default `true`). |
+
+Regardless of the allow-list, these can never be targeted: anything in
+`rbac.authorization.k8s.io`, `admissionregistration.k8s.io`, `apiextensions.k8s.io`,
+`authentication.k8s.io`, `authorization.k8s.io`; core `serviceaccounts`, `pods`,
+`nodes`, `namespaces`, `persistentvolumes`; any cluster-scoped kind. The target always
+lives in the `ValsSecret`'s own namespace, and `apiVersion`/`kind` are fixed strings,
+never rendered from a template.
+
+What to think about before adding a resource to the list:
+
+- **The value becomes plaintext.** A backend secret written into a ConfigMap or a CRD
+  `spec` is readable by anybody with `get` on that kind, appears in `kubectl get -o yaml`,
+  in audit logs and in etcd unencrypted. Prefer a kind that references a Secret; use a
+  custom target only where the consumer offers no such indirection (the Flink
+  `flinkConfiguration` case).
+- **Workload kinds are code execution.** Allowing `deployments`, `statefulsets`,
+  `daemonsets` or `jobs` lets anybody who can create a `ValsSecret` patch a pod spec —
+  environment, image, command — as that workload's ServiceAccount. Allow them only in
+  namespaces where every `ValsSecret` author already holds that power.
+- **`mode: patch` writes into objects the operator does not own.** Ownership is per
+  field (Server-Side Apply, field manager `vals-operator`); the operator never touches
+  fields it did not render and never deletes the object. Still, it will overwrite the
+  listed fields, so pair the allow-list with RBAC on who may create `ValsSecret`s.
+- `-allowed-backend-paths` still governs what may be *read*; the two lists compose.
+
 ## Recommendations
 
 For any cluster where namespaces are not all equally trusted:
@@ -176,6 +212,8 @@ For any cluster where namespaces are not all equally trusted:
 5. Restrict who can create `ValsSecret` and `DbSecret` resources with RBAC. Nothing
    above helps if any user in a namespace can create them.
 6. Enable encryption at rest for Kubernetes Secrets.
+7. Leave `customTargets.enabled=false` unless a workload needs it, and then list only
+   the exact resources required.
 
 ## Reporting a vulnerability
 

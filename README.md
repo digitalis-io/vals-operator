@@ -148,8 +148,33 @@ spec:
       name: cassandra-client
 ```
 
-More, including rotating a database's password in the database itself, in
-[Usage](docs/usage.md).
+### Inject a secret into a CRD without putting it in Git
+
+With custom targets enabled, `spec.target` writes the value into any resource — here
+only one field of a `FlinkDeployment` that ArgoCD otherwise manages.
+
+```yaml
+apiVersion: digitalis.io/v1
+kind: ValsSecret
+metadata:
+  name: flink-datadog
+spec:
+  data:
+    datadog_api_key:
+      ref: ref+awssecrets://prod/datadog#api_key
+  target:
+    apiVersion: flink.apache.org/v1beta1
+    kind: FlinkDeployment
+    name: my-pipeline
+    mode: patch
+    template: |
+      spec:
+        flinkConfiguration:
+          metrics.reporter.dghttp.apikey: {{ .datadog_api_key | quote }}
+```
+
+More, including ConfigMap targets and rotating a database's password in the database
+itself, in [Usage](docs/usage.md).
 
 ## Operator flags
 
@@ -166,6 +191,8 @@ More, including rotating a database's password in the database itself, in
 | `-disable-namespace-sync` | bool | `false` | Blocks all cross-namespace `ref+k8s://` references. See [Security](docs/security.md#cross-namespace-references). |
 | `-allowed-namespaces-for-sync` | string | `""` | Comma-separated allowlist of namespaces that may be referenced via `ref+k8s://`. See [Security](docs/security.md#cross-namespace-references). |
 | `-allowed-backend-paths` | string | `""` | Restricts which backend paths each namespace may read, covering both `ValsSecret` references (all backends) and `DbSecret` mounts/roles. Semicolon-separated `namespace=prefix[,prefix...]` entries; `*` applies to all namespaces. See [Security](docs/security.md#restricting-backend-paths). |
+| `-enable-custom-targets` | bool | `false` | Allow `spec.target` to write into ConfigMaps and CRDs instead of Secrets. Needs `-allowed-target-resources`. See [Security](docs/security.md#custom-targets). |
+| `-allowed-target-resources` | string | `""` | Comma-separated `resource.group` list that `spec.target` may write, e.g. `configmaps,flinkdeployments.flink.apache.org`. |
 
 Logging and kubeconfig flags, every Helm value and the supported annotations are in the
 [configuration reference](docs/configuration.md).
