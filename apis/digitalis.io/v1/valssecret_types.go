@@ -85,7 +85,7 @@ type ValsSecretSpec struct {
 
 // RolloutTarget sets up what deployment or sts to restart
 type RolloutTarget struct {
-	// Kind is either Deployment, Pod or StatefulSet
+	// Kind is either Deployment or StatefulSet
 	Kind string `json:"kind"`
 	// Name is the object name
 	Name string `json:"name"`

@@ -49,5 +49,7 @@ Thumbs.db
 *.flv
 *.mov
 *.wmv
-DUAL_BACKEND_SUPPORT.md
-OPENBAO.md
+# Internal design documents. These are working notes, not product documentation,
+# and are deliberately kept out of the repository. See docs/index.md for the
+# documentation that ships with the operator.
+docs/internal/

@@ -1,39 +1,55 @@
+# -- Declared for compatibility. The Deployment template always renders a single
+# replica; enable `-leader-elect` via `args` if you change this in a fork.
 replicaCount: 1
 
 image:
+  # -- Container image repository.
   repository: ghcr.io/digitalis-io/vals-operator
+  # -- Image pull policy.
   pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion.
+  # -- Overrides the image tag whose default is the chart appVersion.
   tag: ""
 
+# -- Pull secrets for a private registry, e.g. `[{name: my-registry}]`.
 imagePullSecrets: []
+# -- Overrides the chart name used in resource names.
 nameOverride: ""
+# -- Overrides the full resource name prefix.
 fullnameOverride: ""
 
 serviceAccount:
-  # Specifies whether a service account should be created
+  # -- Specifies whether a service account should be created
   create: true
-  # Annotations to add to the service account
+  # -- Annotations to add to the service account. Use this for IRSA on EKS,
+  # e.g. `{eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/vals}`.
   annotations: {}
-  # The name of the service account to use.
+  # -- The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
   name: ""
 
+# -- Render the ValsSecret and DbSecret CRDs as part of the chart. Set to false
+# when the CRDs are managed elsewhere, such as by a cluster-scoped GitOps process.
 manageCrds: true
 
+# -- Install the DbSecret CRD and the wider RBAC that controller requires.
 # This may not be required by everyone and the pod will require wider permissions
 # which may not be desired on secure environments
 enableDbSecrets: true
 
 prometheusRules:
+  # -- Create a PrometheusRule with the operator's alerts.
   enabled: false
-  ## Additional labels for PrometheusRule alerts
+  # -- Additional labels for PrometheusRule alerts,
+  # e.g. `{severity_team: platform}`.
   additionalRuleLabels: {}
 
-  ## Additional annotations for PrometheusRule alerts
+  # -- Additional annotations for PrometheusRule alerts,
+  # e.g. `{runbook_url: https://example.com/runbook}`.
   additionalRuleAnnotations: {}
 
-# additional arguments to operator
+# -- Additional command-line flags for the operator,
+# e.g. `["-exclude-namespaces=kube-system", "-ttl=15m"]`.
+# See https://github.com/digitalis-io/vals-operator/blob/main/docs/configuration.md
 args: []
   # -exclude-namespaces string
   #   	Comma separated list of namespaces to ignore.
@@ -69,14 +85,18 @@ args: []
   #   	Zap Level at and above which stacktraces are captured (one of 'info', 'error', 'panic').
 
 
+# -- Renders `-disable-namespace-sync`.
 # Disable cross-namespace ref+k8s:// references. When true, a ValsSecret can only
 # reference k8s secrets in its own namespace. Takes precedence over allowedNamespacesForSync.
 disableNamespaceSync: false
 
+# -- Renders `-allowed-namespaces-for-sync`, e.g. `"shared-secrets,platform"`.
 # Comma-separated list of namespaces that may be referenced via ref+k8s://.
 # Empty string means all namespaces are allowed (unless disableNamespaceSync is true).
 allowedNamespacesForSync: ""
 
+# -- Renders `-allowed-backend-paths`,
+# e.g. `"team-a=ref+vault://database/creds/team-a;*=ref+awssecrets://shared"`.
 # Restrict which backend paths each namespace may read. This covers BOTH the
 # references in a ValsSecret (every backend, not just ref+k8s://) and the mount
 # and role named by a DbSecret, so that restricting one resource cannot be
@@ -86,14 +106,14 @@ allowedNamespacesForSync: ""
 # applies to every namespace, in addition to any namespace-specific entry.
 # Prefixes match on path-segment boundaries.
 #
-#   allowedBackendPaths: "team-a=ref+vault://database/creds/team-a,ref+k8s://team-a;*=ref+awssecrets://shared"
-#
 # Empty string (the default) allows every path the operator's backend credential
 # can read. Set this on any cluster where namespaces are not all equally trusted:
 # the operator holds one credential for all namespaces, so anybody who can create
 # a ValsSecret or DbSecret otherwise inherits its full reach.
 allowedBackendPaths: ""
 
+# -- Name of a single Secret loaded into the pod with `envFrom`,
+# e.g. `vals-operator-env`. Takes precedence over `secretEnv` when set.
 environmentSecret: ""
 
 # Secrets backend configuration
@@ -101,72 +121,105 @@ environmentSecret: ""
 
 # OpenBao configuration (recommended for new deployments)
 openbao:
+  # -- Render the `BAO_*` environment variables.
   enabled: false
+  # -- OpenBao server URL (`BAO_ADDR`).
   address: "http://openbao:8200"
+  # -- Skip TLS certificate verification (`BAO_SKIP_VERIFY`).
   skipVerify: false
   # Authentication configuration
   auth:
     # Kubernetes auth
     kubernetes:
+      # -- Kubernetes auth role (`BAO_ROLE_ID`), e.g. `vals-operator`.
       roleId: ""
+      # -- Kubernetes auth mount (`BAO_KUBERNETES_MOUNT_POINT`).
       mountPoint: "kubernetes"
     # AppRole auth
     approle:
+      # -- AppRole role ID (`BAO_APP_ROLE`).
       roleId: ""
+      # -- AppRole secret ID (`BAO_SECRET_ID`). Prefer `environmentSecret` — this
+      # value ends up in the Helm release manifest.
       secretId: ""
+      # -- AppRole mount (`BAO_APPROLE_MOUNT_PATH`).
       mountPath: "approle"
     # UserPass auth
     userpass:
+      # -- Userpass username (`BAO_LOGIN_USER`). Not recommended.
       username: ""
+      # -- Userpass password (`BAO_LOGIN_PASSWORD`). Not recommended.
       password: ""
+      # -- Userpass mount (`BAO_USERPASS_MOUNT_PATH`).
       mountPath: "userpass"
 
 # HashiCorp Vault configuration (legacy, for backwards compatibility)
 vault:
+  # -- Render the `VAULT_*` environment variables.
   enabled: false
+  # -- Vault server URL (`VAULT_ADDR`).
   address: "http://vault:8200"
+  # -- Skip TLS certificate verification (`VAULT_SKIP_VERIFY`).
   skipVerify: false
   # Authentication configuration
   auth:
     # Kubernetes auth
     kubernetes:
+      # -- Kubernetes auth role (`VAULT_ROLE_ID`), e.g. `vals-operator`.
       roleId: ""
+      # -- Kubernetes auth mount (`VAULT_KUBERNETES_MOUNT_POINT`).
       mountPoint: "kubernetes"
     # AppRole auth
     approle:
+      # -- AppRole role ID (`VAULT_APP_ROLE`).
       roleId: ""
+      # -- AppRole secret ID (`VAULT_SECRET_ID`). Prefer `environmentSecret`.
       secretId: ""
+      # -- AppRole mount (`VAULT_APPROLE_MOUNT_PATH`).
       mountPath: "approle"
     # UserPass auth
     userpass:
+      # -- Userpass username (`VAULT_LOGIN_USER`). Not recommended.
       username: ""
+      # -- Userpass password (`VAULT_LOGIN_PASSWORD`). Not recommended.
       password: ""
+      # -- Userpass mount (`VAULT_USERPASS_MOUNT_PATH`).
       mountPath: "userpass"
 
+# -- Additional environment variables for vals backends,
+# e.g. `[{name: AWS_DEFAULT_REGION, value: "us-west-2"}]`.
 # See https://github.com/helmfile/vals
 # for information on setting up your backend environment.
-# Additional environment variables (for vals refs and other backends)
 env: []
   # - name: AWS_DEFAULT_REGION
   #   value: "us-west-2"
 
+# -- `envFrom` sources for the operator container,
+# e.g. `[{secretRef: {name: aws-creds}}]`. Ignored when `environmentSecret` is set.
 secretEnv: []
   # - secretRef:
   #     name: aws-creds
 
+# -- Additional pod volumes,
+# e.g. `[{name: creds, secret: {secretName: gcs-credentials}}]`.
 volumes: []
   # - name: creds
   #   secret:
   #     secretName: gcs-credentials
+# -- Additional container volume mounts,
+# e.g. `[{name: creds, mountPath: /secret, readOnly: true}]`.
 volumeMounts: []
   # - name: creds
   #   mountPath: /secret
   #   readOnly: true
 
 
+# -- Pod-level security context, e.g. `{fsGroup: 2000}`.
 podSecurityContext: {}
   # fsGroup: 2000
 
+# -- Container-level security context,
+# e.g. `{runAsNonRoot: true, readOnlyRootFilesystem: true}`.
 securityContext: {}
   # capabilities:
   #   drop:
@@ -176,21 +229,22 @@ securityContext: {}
   # runAsUser: 1000
 
 podMonitor:
-  # When set to true then use a podMonitor to collect metrics
+  # -- Create a Prometheus Operator PodMonitor for the operator pod, scraping
+  # /metrics every 30s in the release namespace.
   enabled: false
-  # Custom labels to use in the podMonitor to be matched with a specific Prometheus
+  # -- Reserved. Not currently applied by the PodMonitor template, which carries
+  # the standard chart labels only.
   labels: {}
-  # Set the namespace the podMonitor should be deployed to
-  # namespace: default
-  # Set how frequently Prometheus should scrape
-  # interval: 30s
-  # Set timeout for scrape
-  # scrapeTimeout: 10s
 
+# -- Container resource requests and limits,
+# e.g. `{requests: {cpu: 100m, memory: 128Mi}}`.
 resources: {}
 
+# -- Node selector for the operator pod.
 nodeSelector: {}
 
+# -- Tolerations for the operator pod.
 tolerations: []
 
+# -- Affinity rules for the operator pod.
 affinity: {}

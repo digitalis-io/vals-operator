@@ -2,6 +2,10 @@
     <img src="Vals-Operator-Logo.png" width="30%" align="center" alt="vals-operator">
 </p>
 
+<p align="center">
+  <em>Built and maintained by <a href="https://digitalis.io">Digitalis.IO</a></em>
+</p>
+
 # Vals-Operator
 
 [![CI](https://github.com/digitalis-io/vals-operator/actions/workflows/pre-commit.yml/badge.svg)](https://github.com/digitalis-io/vals-operator/actions/workflows/pre-commit.yml)
@@ -11,30 +15,143 @@
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/digitalis-io/vals-operator)
 <a href="https://artifacthub.io/packages/helm/vals-operator/vals-operator"><img alt="Artifact Hub" src="https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/vals-operator" /></a>
 
-**Vals-Operator** is a Kubernetes operator that integrates external secret stores with Kubernetes, keeping your secrets in sync.
+**Vals-Operator keeps Kubernetes Secrets in sync with your external secrets store.**
 
-Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/helmfile/vals), it's a tool we use daily to keep secrets stored securely. Inspired by it,
-we have created an operator to manage Kubernetes secrets. As [Digitalis](https://digitalis.io) and our sister company [AxonOps](https://axonops.com) are data companies,
-we also added a set of features tailored for running databases.
+Write a `ValsSecret` that points at Vault, OpenBao, AWS Secrets Manager, GCP Secret
+Manager or any other store supported by [vals](https://github.com/helmfile/vals), and
+the operator creates the Kubernetes Secret and keeps it up to date. It can also issue
+dynamic database credentials from the Vault/OpenBao database secrets engine, rotate
+database passwords in the database itself, and restart the workloads that consume a
+secret when it changes.
 
-*vals-operator* syncs secrets from any secrets store supported by [vals](https://github.com/helmfile/vals) into Kubernetes. Also, *vals-operator* supports database secrets
-as provider by the [HashiCorp Vault Secret Engine](https://developer.hashicorp.com/vault/docs/secrets/databases).
+Built at [Digitalis](https://digitalis.io), where we run databases for a living — which
+is why the database features are here alongside plain secret syncing.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Examples](#examples)
+- [Operator flags](#operator-flags)
+- [Security](#security)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
 
 ## Demo
 
-You can watch this brief video on how it works:
-
 [![YouTube](./youtube-video.png)](https://www.youtube.com/watch?feature=player_embedded&v=wLzkrKdSBT8)
 
-## Mirroring secrets
+## Quick start
 
-Vals-operator can copy secrets between namespaces using the `ref+k8s://namespace/secret#key` format. This lets a `ValsSecret` in one namespace pull a value from a Kubernetes secret in another namespace and keep it in sync.
+Install the operator, pointed at an OpenBao (or Vault) server using Kubernetes auth:
 
-> **Warning:** Cross-namespace `ref+k8s://` references allow any namespace with a `ValsSecret` to read secrets from other namespaces, subject only to the operator's RBAC permissions — not the requesting namespace's own permissions. Admins SHOULD restrict this behaviour in multi-tenant clusters using the flags documented in [Operator Flags](#operator-flags).
+```sh
+helm install vals-operator oci://ghcr.io/digitalis-io/helm-charts/vals-operator \
+  --create-namespace -n vals-operator \
+  --set "openbao.enabled=true" \
+  --set "openbao.address=http://openbao.openbao:8200" \
+  --set "openbao.auth.kubernetes.roleId=vals-operator"
+```
 
-# Operator Flags
+Helm 3.7 or earlier, or any other backend? See [Installation](docs/installation.md)
+and [Secrets backends](docs/backends.md).
 
-The operator binary accepts the following flags. All flags are optional unless noted.
+Create a secret:
+
+```yaml
+apiVersion: digitalis.io/v1
+kind: ValsSecret
+metadata:
+  name: database-credentials
+spec:
+  name: db-creds # Name of the Kubernetes Secret to create
+  data:
+    username:
+      ref: ref+vault://secret/database/username
+    password:
+      ref: ref+vault://secret/database/password
+```
+
+```sh
+kubectl apply -f database-credentials.yaml
+kubectl get secret db-creds
+```
+
+The Secret is re-read from the backend every 5 minutes by default, and every change is
+recorded as an Event:
+
+```sh
+kubectl describe valssecret database-credentials
+```
+
+## Examples
+
+### Render a config file and restart the app
+
+Any key in `data` is available as a template variable, so a whole configuration file
+can be assembled from individual secret values. `rollout` restarts the workloads that
+consume the Secret when it changes.
+
+```yaml
+apiVersion: digitalis.io/v1
+kind: ValsSecret
+metadata:
+  name: app-config
+spec:
+  name: app-config
+  ttl: 3600 # Seconds between backend reads
+  data:
+    username:
+      ref: ref+awssecrets://kube/test#username
+    password:
+      ref: ref+awssecrets://kube/test#password
+    ca-cert:
+      ref: ref+vault://secret/app/ca-cert
+      encoding: base64 # Decoded before it is stored
+    environment:
+      ref: production # No ref+ prefix: stored verbatim
+  template:
+    config.yaml: |
+      # Generated by vals-operator on {{ now | date "2006-01-02" }}
+      environment: {{ .environment }}
+      database:
+        username: {{ .username }}
+        password: {{ .password }}
+  rollout:
+    - kind: Deployment
+      name: myapp
+    - kind: StatefulSet
+      name: myapp-workers
+```
+
+### Dynamic database credentials
+
+`DbSecret` requests credentials from the Vault/OpenBao
+[database secrets engine](https://developer.hashicorp.com/vault/docs/secrets/databases)
+and renews the lease before it expires. Requires Vault >= 1.10 or OpenBao >= 2.0.
+
+```yaml
+apiVersion: digitalis.io/v1beta1
+kind: DbSecret
+metadata:
+  name: cassandra
+spec:
+  secretName: cassandra-credentials
+  renew: true # Renew the lease rather than issuing new credentials each cycle
+  vault:
+    mount: cass000  # Database secrets engine mount
+    role: readonly  # Role to request credentials for
+  template: # Optional: rename the keys the backend returns
+    CASSANDRA_USERNAME: "{{ .username }}"
+    CASSANDRA_PASSWORD: "{{ .password }}"
+  rollout:
+    - kind: Deployment
+      name: cassandra-client
+```
+
+More, including rotating a database's password in the database itself, in
+[Usage](docs/usage.md).
+
+## Operator flags
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -46,549 +163,56 @@ The operator binary accepts the following flags. All flags are optional unless n
 | `-exclude-namespaces` | string | `""` | Comma-separated list of namespaces the operator ignores entirely. |
 | `-record-changes` | bool | `true` | Records each secret update as a Kubernetes Event, visible via `kubectl describe`. Can be overridden per resource with the annotation `vals-operator.digitalis.io/record: "true"`. |
 | `-leader-elect` | bool | `false` | Enables leader election, ensuring only one active controller instance when running multiple replicas. |
-| `-disable-namespace-sync` | bool | `false` | Blocks all cross-namespace `ref+k8s://` references. See [Cross-Namespace Reference Security](#cross-namespace-reference-security). |
-| `-allowed-namespaces-for-sync` | string | `""` | Comma-separated allowlist of namespaces that may be referenced via `ref+k8s://`. See [Cross-Namespace Reference Security](#cross-namespace-reference-security). |
-| `-allowed-backend-paths` | string | `""` | Restricts which backend paths each namespace may read, covering both `ValsSecret` references (all backends) and `DbSecret` mounts/roles. Semicolon-separated `namespace=prefix[,prefix...]` entries; `*` applies to all namespaces. See [Restricting which backend paths a namespace can read](#restricting-which-backend-paths-a-namespace-can-read). |
+| `-disable-namespace-sync` | bool | `false` | Blocks all cross-namespace `ref+k8s://` references. See [Security](docs/security.md#cross-namespace-references). |
+| `-allowed-namespaces-for-sync` | string | `""` | Comma-separated allowlist of namespaces that may be referenced via `ref+k8s://`. See [Security](docs/security.md#cross-namespace-references). |
+| `-allowed-backend-paths` | string | `""` | Restricts which backend paths each namespace may read, covering both `ValsSecret` references (all backends) and `DbSecret` mounts/roles. Semicolon-separated `namespace=prefix[,prefix...]` entries; `*` applies to all namespaces. See [Security](docs/security.md#restricting-backend-paths). |
 
-## Cross-Namespace Reference Security
+Logging and kubeconfig flags, every Helm value and the supported annotations are in the
+[configuration reference](docs/configuration.md).
 
-The `ref+k8s://namespace/secret#key` syntax lets a `ValsSecret` read a Kubernetes secret from a different namespace. In multi-tenant clusters this is a privilege escalation vector: a tenant who can create `ValsSecret` resources can read secrets from any namespace the operator has RBAC access to.
+## Security
 
-Two flags control this behaviour.
+The operator authenticates to its backends **once at startup**, with one credential
+shared by every namespace. That credential's policy is the real security boundary:
+by default, anybody who can create a `ValsSecret` or `DbSecret` in a watched namespace
+can read anything the operator can read.
 
-### `-disable-namespace-sync`
+On any cluster where namespaces are not all equally trusted, set `allowedBackendPaths`
+and restrict cross-namespace `ref+k8s://` references. The threat model and the full set
+of controls are in [Security](docs/security.md).
 
-When set to `true`, the operator rejects any `ref+k8s://` reference where the target namespace differs from the `ValsSecret`'s own namespace. Same-namespace references are never blocked.
+Releases are signed with [cosign](https://github.com/sigstore/cosign) keyless signing
+and ship SPDX and CycloneDX SBOMs — see
+[Verifying signatures](docs/installation.md#verifying-signatures).
 
-A rejected reference produces the event:
+Report security issues privately to [info@digitalis.io](mailto:info@digitalis.io).
 
-```
-cross-namespace ref+k8s:// is disabled: namespace "tenant-a" cannot reference "tenant-b"
-```
+## Documentation
 
-Use this flag in clusters where no cross-namespace secret sharing is required. It is the most restrictive option.
+Full documentation is in [docs/](docs/index.md):
 
-```sh
-helm upgrade --install vals-operator digitalis/vals-operator \
-  --set "extraArgs[0]=-disable-namespace-sync=true"
-```
+- [Installation](docs/installation.md) — Helm, OCI, CRDs, signature and SBOM verification.
+- [Secrets backends](docs/backends.md) — Vault, OpenBao, AWS, GCP and everything else vals supports.
+- [Usage](docs/usage.md) — `ValsSecret`, `DbSecret`, templates, rollouts, password rotation.
+- [Security](docs/security.md) — threat model and multi-tenancy controls.
+- [Configuration reference](docs/configuration.md) — every flag, value and annotation.
+- [Upgrade notes](docs/upgrading.md) — read before upgrading an existing deployment.
+- [EKS integration](docs/eks/index.md) — IRSA setup for reading AWS secrets.
 
-### `-allowed-namespaces-for-sync`
+Runnable manifests live in [config/samples/](config/samples).
 
-Provides a namespace-level allowlist for cross-namespace `ref+k8s://` references. Only namespaces named in the list may be used as the target of a cross-namespace reference. Same-namespace references are always permitted regardless of this list.
+## Contributing
 
-A reference targeting a namespace not in the allowlist produces the event:
+Bug reports, feature requests and pull requests are welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for how to build and test, and
+[CHANGELOG.md](CHANGELOG.md) for the release history.
 
-```
-cross-namespace ref+k8s:// denied: namespace "restricted" is not in the allowed list
-```
+## License
 
-When the value is empty (the default), all namespaces are allowed — subject to `-disable-namespace-sync`.
-
-```sh
-helm upgrade --install vals-operator digitalis/vals-operator \
-  --set "extraArgs[0]=-allowed-namespaces-for-sync=shared-secrets,platform"
-```
-
-### Precedence
-
-`-disable-namespace-sync` takes precedence over `-allowed-namespaces-for-sync`. When `-disable-namespace-sync=true`, the allowlist is not consulted — all cross-namespace references are rejected regardless of the allowlist contents.
-
-| `-disable-namespace-sync` | `-allowed-namespaces-for-sync` | Result |
-|---------------------------|-------------------------------|--------|
-| `false` | `""` (empty) | All cross-namespace refs allowed |
-| `false` | `"ns-a,ns-b"` | Only refs targeting `ns-a` or `ns-b` allowed |
-| `true` | any value | All cross-namespace refs rejected |
-
-Same-namespace references are always allowed in every configuration.
-
-# Installation
-
-You can use the helm chart to install `vals-operator`. First of all, add the repository to your helm installation:
-
-```sh
-helm repo add digitalis https://digitalis-io.github.io/helm-charts
-```
-
-### Install via OCI Registry (Helm 3.8+)
-
-The chart is published as an OCI artifact on every release. This is the RECOMMENDED installation method for Helm 3.8 and later — no `helm repo add` step is required.
-
-```bash
-helm install vals-operator oci://ghcr.io/digitalis-io/helm-charts/vals-operator --version <version>
-```
-
-To upgrade:
-
-```bash
-helm upgrade vals-operator oci://ghcr.io/digitalis-io/helm-charts/vals-operator --version <version>
-```
-
-> **Note:** The traditional Helm repository at `https://digitalis-io.github.io/helm-charts` remains available during the transition. Consumers on Helm 3.7 or earlier MUST use the `helm repo add` method above.
-
-## Verifying Signatures
-
-Container images and the Helm OCI chart are signed on every release using
-[cosign](https://github.com/sigstore/cosign) keyless signing via GitHub Actions
-OIDC. No long-lived signing key is used — verification trusts only the Sigstore
-public infrastructure and the workflow identity that produced the artifact.
-
-Install cosign with `brew install cosign` or grab a binary from the
-[Sigstore releases page](https://github.com/sigstore/cosign/releases).
-
-> **Important:** Always verify by an immutable reference — the version tag
-> (`vX.Y.Z`) or, preferably, the image digest (`@sha256:...`). The mutable
-> `:latest` tag is not a stable signing target.
-
-Verify the container image (substitute the release tag):
-
-```sh
-cosign verify ghcr.io/digitalis-io/vals-operator:<TAG> \
-  --certificate-identity-regexp "^https://github\.com/digitalis-io/vals-operator/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$" \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  | jq .
-```
-
-Verify the Helm OCI chart (substitute the chart version, no leading `v`):
-
-```sh
-cosign verify ghcr.io/digitalis-io/helm-charts/vals-operator:<CHART_VERSION> \
-  --certificate-identity-regexp "^https://github\.com/digitalis-io/vals-operator/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$" \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  | jq .
-```
-
-## Software Bill of Materials
-
-Every released container image ships with an SPDX 2.3 JSON and a CycloneDX 1.5
-JSON SBOM. Both are attached as assets to the corresponding GitHub Release, and
-the SPDX SBOM is additionally recorded as a cosign attestation on the image
-digest.
-
-Download from the GitHub Release:
-
-```
-https://github.com/digitalis-io/vals-operator/releases/download/<TAG>/vals-operator-<TAG>-sbom.spdx.json
-https://github.com/digitalis-io/vals-operator/releases/download/<TAG>/vals-operator-<TAG>-sbom.cdx.json
-```
-
-Verify the SBOM attestation against the image digest:
-
-```sh
-cosign verify-attestation \
-  --type spdxjson \
-  --certificate-identity-regexp "^https://github\.com/digitalis-io/vals-operator/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$" \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/digitalis-io/vals-operator@<DIGEST> \
-  | jq '.payload | @base64d | fromjson'
-```
-
-## Secrets Backend Configuration
-
-vals-operator now supports **both HashiCorp Vault and OpenBao** as secrets backends. The operator automatically detects which backend to use based on the environment variables you provide.
-
-### Using OpenBao (Recommended for New Deployments)
-
-```sh
-# Example with OpenBao using Kubernetes auth
-helm upgrade --install vals-operator --create-namespace -n vals-operator \
-  --set "openbao.enabled=true" \
-  --set "openbao.address=http://openbao:8200" \
-  --set "openbao.auth.kubernetes.roleId=vals-operator" \
-  digitalis/vals-operator
-
-# Example with OpenBao using AppRole auth
-helm upgrade --install vals-operator --create-namespace -n vals-operator \
-  --set "openbao.enabled=true" \
-  --set "openbao.address=http://openbao:8200" \
-  --set "openbao.auth.approle.roleId=my-role-id" \
-  --set "openbao.auth.approle.secretId=my-secret-id" \
-  digitalis/vals-operator
-```
-
-### Using HashiCorp Vault (For Existing Deployments)
-
-```sh
-# Example with Vault using Kubernetes auth
-helm upgrade --install vals-operator --create-namespace -n vals-operator \
-  --set "vault.enabled=true" \
-  --set "vault.address=http://vault:8200" \
-  --set "vault.auth.kubernetes.roleId=vals-operator" \
-  digitalis/vals-operator
-
-# Example with Vault using environment variables (legacy method - still supported)
-helm upgrade --install vals-operator --create-namespace -n vals-operator \
-  --set "env[0].name=VAULT_ROLE_ID,env[0].value=vals-operator" \
-  --set "env[1].name=VAULT_ADDR,env[1].value=https://vault:8200" \
-  digitalis/vals-operator
-
-# Example for AWS using a secret
-kubectl create secret generic -n vals-operator aws-creds \
-  --from-literal=AWS_ACCESS_KEY_ID=foo \
-  --from-literal=AWS_SECRET_ACCESS_KEY=bar \
-  --from-literal=AWS_DEFAULT_REGION=us-west-2
-
-helm upgrade --install vals-operator --create-namespace -n vals-operator \
-  --set "secretEnv[0].secretRef.name=aws-creds"  \
-  digitalis/vals-operator
-
-# Another example using a Google Cloud service account
-kubectl create secret generic -n vals-operator google-creds \
-  --from-file=credentials.json=/path/to/service_account.json
-
-helm upgrade --install vals-operator --create-namespace -n vals-operator \
-  --set "env[0].name=GOOGLE_APPLICATION_CREDENTIALS,env[0].value=/secret/credentials.json" \
-  --set "env[1].name=GCP_PROJECT,env[1].value=my_project" \
-  --set "volumes[0].name=creds,volumes[0].secret.secretName=google-creds" \
-  --set "volumeMounts[0].name=creds,volumeMounts[0].mountPath=/secret" \
-  digitalis/vals-operator
-```
-
-> :information_source: Check out the [documentation](./docs/index.md) for further details and examples including EKS integration.
-
-## Dual Backend Support (Vault & OpenBao)
-
-vals-operator now provides **seamless dual backend support**, allowing you to use either HashiCorp Vault or OpenBao without code changes. This enables:
-
-- **Zero-downtime migration** from Vault to OpenBao
-- **Backwards compatibility** with existing Vault deployments
-- **Environment variable fallback** - OpenBao variables can fall back to Vault variables
-
-### Backend Selection
-
-The operator automatically detects which backend to use:
-1. If `BAO_ADDR` is set → Uses OpenBao
-2. If `VAULT_ADDR` is set (and `BAO_ADDR` is not) → Uses HashiCorp Vault
-3. If both are set → Uses OpenBao with a warning (OpenBao takes precedence)
-4. If neither is set → Error
-
-### Environment Variable Compatibility
-
-For backwards compatibility, environment variables automatically fall back:
-- `BAO_*` variables fall back to `VAULT_*` if not set
-- This allows gradual migration without breaking existing configurations
-
-Example:
-```sh
-# These configurations are equivalent:
-BAO_ADDR=http://openbao:8200
-VAULT_ROLE_ID=my-role  # Will be used for OpenBao if BAO_ROLE_ID is not set
-
-# Or explicitly set both:
-BAO_ADDR=http://openbao:8200
-BAO_ROLE_ID=my-role
-```
-
-For detailed migration instructions, see [OPENBAO.md](OPENBAO.md) and [DUAL_BACKEND_SUPPORT.md](DUAL_BACKEND_SUPPORT.md).
-
-## Authentication Configuration
-
-### OpenBao Authentication
-
-For OpenBao, you can use the following environment variables:
-
-* **BAO_ADDR**: URL to the OpenBao server, e.g., http://openbao:8200
-* **BAO_ROLE_ID**: Required for Kubernetes authentication
-* **BAO_LOGIN_USER** and **BAO_LOGIN_PASSWORD**: For `userpass` authentication (insecure, not recommended)
-* **BAO_APP_ROLE** and **BAO_SECRET_ID**: For `approle` authentication
-
-### HashiCorp Vault Authentication
-
-For HashiCorp Vault, you can use the following environment variables:
-
-* **VAULT_ADDR**: URL to the Vault server, e.g., http://vault:8200
-* **VAULT_ROLE_ID**: Required for Kubernetes authentication
-* **VAULT_LOGIN_USER** and **VAULT_LOGIN_PASSWORD**: For `userpass` authentication (insecure, not recommended)
-* **VAULT_APP_ROLE** and **VAULT_SECRET_ID**: For `approle` authentication
-
-For Kubernetes authentication with either backend, refer to the respective documentation:
-- [OpenBao Kubernetes Auth](https://openbao.org/docs/auth/kubernetes/)
-- [Vault Kubernetes Auth](https://www.vaultproject.io/docs/auth/kubernetes)
-
-# Usage
-
-```yaml
-apiVersion: digitalis.io/v1
-kind: ValsSecret
-metadata:
-  name: vals-secret-sample
-  labels:
-    owner: digitalis.io
-spec:
-  name: my-secret # Optional, default is the resource name
-  ttl: 3600       # Optional, default is 5 minutes. The secret will be checked at every "reconcile period". See below.
-  type: Opaque    # Default type, others supported
-  data:
-    username:
-      ref: ref+vault://secret/database/username
-      encoding: text
-    password:
-      ref: ref+vault://secret/database/password
-      encoding: text
-    ssh:
-      ref: ref+vault://secret/database/ssh-private-key
-      encoding: base64
-    aws-user:
-      ref: ref+awssecrets://kube/test#username
-    aws-pass:
-      ref: ref+awssecrets://kube/test#password
-    ns-secret:
-      ref: ref+k8s://namespace/secret#key
-    plain-text:
-      ref: literal_name # this is not processed by any secrets agent but is added to the secret as a literal string
-  template:
-    config.yaml: |
-      # Config generated by Vals-Operator on {{ now | date "2006-01-02" }}
-      username: {{.username}}
-      password: {{.password}}
-      {{- if .url }}
-      url: {{ .url | lower }}
-      {{ end }}
-  rollout: # optional: run a `rollout` to make the pods use new secret
-    - kind: Deployment
-      name: myapp
-```
-
-The example above will create a secret named `my-secret` and get the values from the different sources. The secret will be kept in sync against the backed secrets store.
-
-The `TTL` is optional and used to decrease the number of times the operator calls the backend secrets store as some of them such as [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/pricing/) will incur a cost.
-
-The default encoding is `text` but you can change it to `base64` per secret reference. This way you can, for example, base64 encode large configuration files. If you omit the `ref+` prefix `vals-operator` will not process the string and it will be added to the secret as as literal string.
-
-You may also use GoLang templates to format a secret. You can inject as variables any of the keys referenced in the `data` section to format, for example, a configuration file.
-The [sprig](https://github.com/Masterminds/sprig/blob/master/docs/index.md) functions are supported, with three exceptions:
-`env`, `expandenv` and `getHostByName` are removed. Templates come from namespaced resources but are rendered inside the
-operator, so those functions would expose the operator's own environment — including its Vault/OpenBao token — to anybody
-able to create a `ValsSecret` or `DbSecret`. A template using one of them fails with `function "env" not defined`; put the
-value in your secrets backend and reference it from `data` instead.
-
-## Vault/OpenBao database credentials
+Licensed under the [Apache License 2.0](LICENSE).
 
 ---
-> **_NOTE:_**  Vault >= 1.10 or OpenBao >= 2.0 is required for this feature to work
----
 
-A great feature in HashiCorp Vault and OpenBao is the ability to generate [database credentials](https://developer.hashicorp.com/vault/docs/secrets/databases) dynamically.
-The missing part is you need these credentials in Kubernertes where your applications are. This is why we have added a new resource definition to do just that:
-
-```yaml
-apiVersion: digitalis.io/v1beta1
-kind: DbSecret
-metadata:
-  name: cassandra
-spec:
-  renew: true # this is the default, otherwise a new credential will be generated every time
-  vault:
-    role: readonly
-    mount: cass000
-  template: # optional: change the secret format
-    CASSANDRA_USERNAME: "{{ .username }}"
-    CASSANDRA_PASSWORD: "{{ .password }}"
-  rollout: # optional: run a `rollout` to make the pods use new credentials
-    - kind: Deployment
-      name: cassandra-client
-    - kind: StatefulSet
-      name: cassandra-client-other
-```
-
-### Upgrade notes
-
-Three changes in the current release need action when upgrading an existing deployment.
-
-**Orphaned leases.** Earlier versions did not revoke a `DbSecret`'s lease when the credentials rotated or when the
-resource was deleted, so leases accumulated in the backend and stayed valid until their natural TTL. The operator has no
-record of those leases, so they must be cleared in the backend. List and inspect what is outstanding for a mount before
-revoking anything:
-
-```sh
-vault list sys/leases/lookup/<mount>/creds/<role>          # bao list ... for OpenBao
-vault lease lookup <mount>/creds/<role>/<lease-id>
-```
-
-Revoke the ones that no longer belong to a live `DbSecret`. To clear every lease under a role in one go — this
-invalidates credentials currently in use, so roll out the consuming workloads afterwards:
-
-```sh
-vault lease revoke -prefix <mount>/creds/<role>
-```
-
-**Templates using `env`.** The `env`, `expandenv` and `getHostByName` sprig functions are no longer available in
-`ValsSecret` and `DbSecret` templates. A template using one now fails with `function "env" not defined`. Move the value
-into your secrets backend and reference it from `data`.
-
-**`rollout[].kind: Pod`.** Only `Deployment` and `StatefulSet` are accepted. `Pod` appeared in the field documentation
-but was never implemented — it was accepted by the API and then failed during reconciliation. A `DbSecret` using it is
-now rejected at apply time, so update those resources before upgrading the CRDs.
-
-### Restricting which backend paths a namespace can read
-
-The operator authenticates to Vault/OpenBao (and every other backend) **once at startup**, with a single credential
-reused for every namespace. That credential's own policy is the real security boundary: anybody who can create a
-`ValsSecret` or a `DbSecret` in a watched namespace can read anything it can read.
-
-`-allowed-backend-paths` narrows that reach per namespace. It covers **both** resources — every `ref+...://` reference in
-a `ValsSecret`, across all backends, and the mount and role named by a `DbSecret`. Restricting only one of them achieves
-nothing, because the same dynamic database credentials are reachable either way:
-
-```yaml
-# These two request identical credentials, so both must be governed by the same rule.
-kind: DbSecret
-spec:
-  vault: {mount: database, role: other-tenant-role}
----
-kind: ValsSecret
-spec:
-  data:
-    password: {ref: "ref+vault://database/creds/other-tenant-role#/password"}
-```
-
-Configure it as semicolon-separated `namespace=prefix[,prefix...]` entries. A namespace of `*` applies to every
-namespace, in addition to any namespace-specific entry:
-
-```yaml
-# Helm values
-allowedBackendPaths: "team-a=ref+vault://database/creds/team-a,ref+k8s://team-a;team-b=ref+vault://database/creds/team-b;*=ref+awssecrets://shared"
-```
-
-Or as an operator flag directly:
-
-```sh
-vals-operator -allowed-backend-paths='team-a=ref+vault://database/creds/team-a;*=ref+awssecrets://shared'
-```
-
-Prefixes match on path-segment boundaries, so `ref+vault://database/creds/team-a` does not cover
-`ref+vault://database/creds/team-abc`.
-
-An empty value (the default) allows every path, so upgrading changes nothing until you configure it. A namespace with no
-matching entry is denied once the flag is set. Denied references are rejected **before any backend call is made**, and
-the reason is recorded as an event naming the namespace and the rejected path:
-
-```sh
-kubectl describe valssecret my-secret
-kubectl describe dbsecret my-db
-```
-
-Note that `-disable-namespace-sync` and `-allowed-namespaces-for-sync` are a different, narrower control: they apply
-only to `ref+k8s://` references and do not restrict any other backend.
-
-## Advance config: password rotation
-
-If you're running a database you may want to keep the secrets in sync between your secrets store, Kubernetes and the database. This can be handy for password rotation to ensure the clients don't use the same password all the time. Please be aware your client *must* suppport re-reading the secret and reconnecting whenever it is updated.
-
-_We don't yet support TLS, we'll add it to future releases._
-
-```yaml
----
-apiVersion: digitalis.io/v1
-kind: ValsSecret
-metadata:
-  name: vals-secret-sample
-  labels:
-    owner: digitalis.io
-spec:
-  name: my-secret # Optional, default is the resource name
-  ttl: 10         # Optional, default is 0. The secret will be checked at every "reconcile period". See below.
-  type: Opaque    # Default type, others supported
-  data:
-    username:
-      ref: ref+gcpsecrets://databases/test#username
-      encoding: text
-    password:
-      ref: ref+gcpsecrets://databases/test#password
-      encoding: text
-  databases:
-    - driver: cassandra
-      loginCredentials:
-        secretName: cassandra-creds # secret containing the username and password to access the DB and run the below query
-        usernameKey: username       # in the secret, which key contains the username (default `cassandra`)
-        passwordKey: password       # in the secret, which key contains the password
-      port: 9042
-      usernameKey: username
-      passwordKey: password
-      hosts:                        # list all your cassandra nodes here
-        - cassandra01
-        - cassandra02
-    - driver: postgres
-      loginCredentials:
-        secretName: postgres-creds
-        usernameKey: username
-        passwordKey: password
-      port: 5432
-      usernameKey: username
-      passwordKey: password
-      hosts:
-        - postgres
-    - driver: mysql
-      loginCredentials:
-        secretName: mysql-creds
-        namespace: mysql-server
-        passwordKey: mysql-root-password # if username is omitted it defaults to `mysql`
-      port: 3306
-      usernameKey: username
-      passwordKey: password
-      userHost: "%"                     # default
-      hosts:
-        - mysql
-    - driver: clickhouse
-      loginCredentials:
-        secretName: clickhouse-creds
-        usernameKey: username           # omit this key to log in as the ClickHouse user 'default'
-        passwordKey: password
-      protocol: native                  # native (default, also 'tcp') or http
-      tls: preferred                    # preferred (default), disable, require or skip-verify
-      port: 9000                        # default 9000 native, 9440 native+TLS, 8123 http, 8443 https
-      usernameKey: username
-      passwordKey: password
-      hosts:
-        - clickhouse01                  # uses the `protocol` and `tls` settings above
-        - https://clickhouse02:8443     # a scheme on the host overrides them
-    - driver: elastic
-      loginCredentials:
-        secretName: elastic-creds
-        namespace: elastic-server
-        usernameKey: username           # the username defaults to 'elastic' if not provided
-        passwordKey: password
-      port: 9200
-      usernameKey: username
-      passwordKey: password
-      hosts:
-        - my-elastic                    # this would be converted to http://my-elastic:9200
-        - https://my-other-elastic:9200 # provide full URL instead
-```
-
-### ClickHouse
-
-The ClickHouse driver connects over the native protocol on port `9000` by
-default and logs in as `default` when `loginCredentials.usernameKey` is
-omitted.
-
-Connection methods:
-
-| Setting | Values | Default port |
-|---|---|---|
-| `protocol: native` (or `tcp`) | native binary protocol | `9000`, or `9440` with TLS |
-| `protocol: http` | HTTP protocol | `8123`, or `8443` with TLS |
-
-TLS is selected with the `tls` field:
-
-| `tls` | Behaviour |
-|---|---|
-| `preferred` (default) | Connects over TLS and falls back to plaintext if the server does not offer it. The server certificate is not verified, matching the MySQL driver's `tls=preferred`. |
-| `disable` | Never uses TLS. |
-| `require` | Always uses TLS and verifies the server certificate. |
-| `skip-verify` | Always uses TLS without verifying the server certificate. |
-
-Each entry in `hosts` may carry its own scheme, which overrides `protocol` and
-`tls` for that host: `tcp://`, `native://`, `clickhouse://` (plaintext native),
-`tls://`, `clickhouses://` (native over TLS), `http://` and `https://`. A
-`host:port` entry overrides the `port` field. Hosts are tried in order until
-one succeeds.
-
-The ClickHouse backend has integration tests covering every connection method
-above. Run them against a throwaway container with `make test-clickhouse`
-(requires Docker).
-
-**Constraint:** `ALTER USER` only works for users created through SQL-driven
-access control. Users defined in `users.xml` cannot be altered at runtime, and
-rotation against such a user fails with an error from the server and is logged
-as a failed host.
+Maintained by [Digitalis.io](https://digitalis.io). For commercial support,
+consulting or managed services, get in touch at
+[digitalis.io/contact](https://digitalis.io/contact).
