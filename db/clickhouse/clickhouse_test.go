@@ -150,7 +150,20 @@ func TestParseHost(t *testing.T) {
 		{name: "empty host", entry: "  ", wantErr: true},
 		{name: "unknown scheme", entry: "ftp://ch.example.com", wantErr: true},
 		{name: "unknown protocol", entry: "ch.example.com", protocol: "carrier-pigeon", wantErr: true},
+		{
+			name:    "uppercase scheme is accepted",
+			entry:   "TLS://ch.example.com",
+			tlsMode: "disable",
+			want:    []string{"tcps://ch.example.com:9440"},
+		},
+		{
+			name:    "trailing colon without a port falls back to the default",
+			entry:   "ch.example.com:",
+			tlsMode: "disable",
+			want:    []string{"tcp://ch.example.com:9000"},
+		},
 		{name: "invalid port", entry: "ch.example.com:zero", wantErr: true},
+		{name: "zero port", entry: "ch.example.com:0", wantErr: true},
 	}
 
 	for _, tt := range tests {

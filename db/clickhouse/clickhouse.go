@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -110,6 +111,24 @@ func tlsModes(mode string) (attempts []bool, skipVerify bool, err error) {
 	return nil, false, fmt.Errorf("unsupported clickhouse tls mode %q", mode)
 }
 
+// schemes maps an explicit URL scheme to the protocol it implies and whether
+// it pins TLS.
+var schemes = map[string]struct {
+	protocol ch.Protocol
+	useTLS   bool
+}{
+	"tcp":            {ch.Native, false},
+	"native":         {ch.Native, false},
+	"clickhouse":     {ch.Native, false},
+	"tls":            {ch.Native, true},
+	"tcps":           {ch.Native, true},
+	"natives":        {ch.Native, true},
+	"clickhouses":    {ch.Native, true},
+	"clickhouse+tls": {ch.Native, true},
+	"http":           {ch.HTTP, false},
+	"https":          {ch.HTTP, true},
+}
+
 // parseHost turns a host entry into the connection(s) to attempt. A host may
 // carry an explicit scheme (`tcp://`, `native://`, `clickhouse://`, `tls://`,
 // `clickhouses://`, `http://`, `https://`) and an explicit `:port`, either of
@@ -122,23 +141,42 @@ func parseHost(entry string, protocol string, tlsAttempts []bool, port int) ([]c
 		return nil, fmt.Errorf("empty clickhouse host")
 	}
 
-	proto, schemeTLS, hasScheme, rest, err := splitScheme(entry)
-	if err != nil {
-		return nil, err
+	// A scheme-less entry such as `ch.example.com:9000` is not a valid URL:
+	// url.Parse would read the host as the scheme. Prefixing `//` makes it a
+	// network-path reference, which parses as a bare authority.
+	raw := entry
+	if !strings.Contains(raw, "://") {
+		raw = "//" + raw
 	}
-	if !hasScheme {
-		proto, err = parseProtocol(protocol)
-		if err != nil {
-			return nil, err
-		}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid clickhouse host %q: %w", entry, err)
 	}
 
-	host, hostPort, err := splitHostPort(rest)
-	if err != nil {
+	host := u.Hostname()
+	if host == "" {
+		return nil, fmt.Errorf("empty clickhouse host")
+	}
+
+	hasScheme := u.Scheme != ""
+	var proto ch.Protocol
+	var schemeTLS bool
+	if hasScheme {
+		s, ok := schemes[u.Scheme]
+		if !ok {
+			return nil, fmt.Errorf("unsupported clickhouse scheme in host %q", entry)
+		}
+		proto, schemeTLS = s.protocol, s.useTLS
+	} else if proto, err = parseProtocol(protocol); err != nil {
 		return nil, err
 	}
-	if hostPort > 0 {
-		port = hostPort
+
+	if p := u.Port(); p != "" {
+		parsed, err := strconv.Atoi(p)
+		if err != nil || parsed < 1 {
+			return nil, fmt.Errorf("invalid clickhouse port in host %q", entry)
+		}
+		port = parsed
 	}
 
 	// An explicit scheme pins the TLS decision, otherwise the tls mode does.
@@ -158,27 +196,6 @@ func parseHost(entry string, protocol string, tlsAttempts []bool, port int) ([]c
 	return conns, nil
 }
 
-// splitScheme strips an optional scheme prefix, returning the protocol it
-// implies, whether it implies TLS, and the remainder of the entry.
-func splitScheme(entry string) (proto ch.Protocol, useTLS bool, hasScheme bool, rest string, err error) {
-	idx := strings.Index(entry, "://")
-	if idx < 0 {
-		return ch.Native, false, false, entry, nil
-	}
-	rest = entry[idx+3:]
-	switch strings.ToLower(entry[:idx]) {
-	case "tcp", "native", "clickhouse":
-		return ch.Native, false, true, rest, nil
-	case "tls", "tcps", "natives", "clickhouses", "clickhouse+tls":
-		return ch.Native, true, true, rest, nil
-	case "http":
-		return ch.HTTP, false, true, rest, nil
-	case "https":
-		return ch.HTTP, true, true, rest, nil
-	}
-	return ch.Native, false, false, "", fmt.Errorf("unsupported clickhouse scheme in host %q", entry)
-}
-
 // parseProtocol maps the CR's `protocol` field to a driver protocol.
 func parseProtocol(protocol string) (ch.Protocol, error) {
 	switch strings.ToLower(strings.TrimSpace(protocol)) {
@@ -188,27 +205,6 @@ func parseProtocol(protocol string) (ch.Protocol, error) {
 		return ch.HTTP, nil
 	}
 	return ch.Native, fmt.Errorf("unsupported clickhouse protocol %q", protocol)
-}
-
-// splitHostPort separates an optional port and strips any trailing path.
-func splitHostPort(entry string) (string, int, error) {
-	if idx := strings.IndexAny(entry, "/?"); idx >= 0 {
-		entry = entry[:idx]
-	}
-	if entry == "" {
-		return "", 0, fmt.Errorf("empty clickhouse host")
-	}
-	host, portStr, err := net.SplitHostPort(entry)
-	if err != nil {
-		// No port present (or an IPv6 literal without brackets and without a
-		// port); use the entry as-is.
-		return strings.Trim(entry, "[]"), 0, nil
-	}
-	port, err := strconv.Atoi(portStr)
-	if err != nil || port < 1 {
-		return "", 0, fmt.Errorf("invalid clickhouse port in host %q", entry)
-	}
-	return host, port, nil
 }
 
 // options builds the driver options for a connection.
