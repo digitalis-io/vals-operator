@@ -4,6 +4,7 @@ package clickhouse
 
 import (
 	"context"
+	"net"
 	"os"
 	"testing"
 	"time"
@@ -197,7 +198,7 @@ func TestRotationUsesTheDefaultLoginUser(t *testing.T) {
 	if os.Getenv("CLICKHOUSE_NATIVE_ADDR_IS_DEFAULT_PORT") == "" || loginUsername() != DefaultUser {
 		t.Skip("the server is not reachable as default@:9000")
 	}
-	host, _, err := splitHostPort(addr)
+	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		t.Fatalf("cannot parse %q: %v", addr, err)
 	}
