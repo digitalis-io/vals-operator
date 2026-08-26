@@ -60,3 +60,18 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Comma separated resource.group list for -allowed-target-resources.
+*/}}
+{{- define "vals-operator.allowedTargetResources" -}}
+{{- $out := list -}}
+{{- range .Values.customTargets.allowedResources -}}
+{{- if .group -}}
+{{- $out = append $out (printf "%s.%s" .resource .group) -}}
+{{- else -}}
+{{- $out = append $out .resource -}}
+{{- end -}}
+{{- end -}}
+{{- join "," $out -}}
+{{- end -}}

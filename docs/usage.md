@@ -61,6 +61,7 @@ This creates a Secret named `my-secret` and keeps it in sync with the backend.
 | `template` | map | — | Extra Secret keys rendered from Go templates. |
 | `databases` | list | — | Databases whose password is rotated to match. See [Password rotation](#password-rotation). |
 | `rollout` | list | — | Workloads to restart when the secret changes. `kind` is `Deployment` or `StatefulSet`. |
+| `target` | object | — | Render the data into a resource other than a Secret. See [Custom targets](#custom-targets). |
 
 `ttl` exists to limit how often the operator calls the backend — some stores, such as
 [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/pricing/), charge per
@@ -96,6 +97,135 @@ namespace and keeps it in sync.
 > **Warning:** this is subject only to the *operator's* RBAC, not the requesting
 > namespace's. In a multi-tenant cluster, restrict it — see
 > [Security](security.md#cross-namespace-references).
+
+### Custom targets
+
+`spec.target` renders the resolved `data` into any namespaced resource — a ConfigMap,
+a `FlinkDeployment`, any CRD — instead of a Secret. It exists for values that have to
+end up in a resource without ever being committed to Git: an API key inside an
+operator's configuration map, SSM parameters inside a ConfigMap.
+
+> **Off by default.** The operator must run with `-enable-custom-targets` and the
+> resource must be listed in `-allowed-target-resources`, which the Helm chart renders
+> from `customTargets`. Read [Security → Custom targets](security.md#custom-targets)
+> before enabling it: values written to a non-Secret resource are plaintext to anybody
+> who can read that resource.
+
+Inject a Datadog API key from AWS Secrets Manager into a `FlinkDeployment` that
+ArgoCD manages:
+
+```yaml
+apiVersion: digitalis.io/v1
+kind: ValsSecret
+metadata:
+  name: flink-datadog
+  namespace: streaming
+spec:
+  ttl: 600
+  data:
+    datadog_api_key:
+      ref: ref+awssecrets://prod/datadog#api_key
+  target:
+    apiVersion: flink.apache.org/v1beta1
+    kind: FlinkDeployment
+    name: my-pipeline
+    mode: patch          # object already exists; only touch the fields below
+    template: |
+      spec:
+        flinkConfiguration:
+          metrics.reporter.dghttp.apikey: {{ .datadog_api_key | quote }}
+```
+
+Build a ConfigMap from SSM parameters:
+
+```yaml
+apiVersion: digitalis.io/v1
+kind: ValsSecret
+metadata:
+  name: app-config
+spec:
+  ttl: 3600
+  data:
+    db_host:
+      ref: ref+awsssm://myapp/prod/db_host
+    region:
+      ref: ref+awsssm://myapp/prod/region
+  target:
+    apiVersion: v1
+    kind: ConfigMap
+    name: app-config
+    mode: create         # default: the operator creates and owns the object
+    labels:
+      app: myapp
+    template: |
+      data:
+        region: {{ .region }}
+        application.yaml: |
+          db:
+            host: {{ .db_host }}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `apiVersion` | string | required | API version of the target, e.g. `v1`, `flink.apache.org/v1beta1`. Not templatable. |
+| `kind` | string | required | Kind of the target. Not templatable. |
+| `name` | string | resource name | Name of the target. Always in the `ValsSecret` namespace. |
+| `mode` | `create` \| `patch` | `create` | See below. |
+| `template` | string | required | Go template rendering a YAML document with the object body **below `metadata`** — `spec:`, `data:`, `stringData:`, anything the kind accepts. Must not set `apiVersion`, `kind`, `metadata` or `status`. |
+| `labels`, `annotations` | map | — | Set on the target in `create` mode. Not templated. |
+
+The template sees every `data` key as `{{ .key }}` (and `{{ .Secrets.key }}`), plus
+`{{ .ValsSecret.Name }}` and `{{ .ValsSecret.Namespace }}`. Same function set as
+[Templates](#templates). Quote string values that could parse as numbers or booleans
+(`{{ .value | quote }}`); a wrong type is rejected by the API server before anything is
+written.
+
+**`mode: create`** — the operator creates the object, labels it
+`app.kubernetes.io/managed-by: vals-operator`, sets an owner reference and deletes it
+when the `ValsSecret` is deleted.
+
+**`mode: patch`** — the object must already exist (typically it lives in Git). The
+operator writes **only** the fields the template renders, with
+[Server-Side Apply](https://kubernetes.io/docs/reference/using-api/server-side-apply/)
+under the field manager `vals-operator`, and leaves every other field to whoever
+owns it. Removing a field from the template removes it from the object; deleting the
+`ValsSecret` removes the injected fields and keeps the object. A hand edit of an
+injected field is reverted on the next TTL. Lists are merged by key only when the
+target's schema declares `x-kubernetes-list-map-keys` (as `containers[].name` and
+`env[].name` do); other lists are replaced wholesale. Inspect ownership with
+`kubectl get <kind> <name> --show-managed-fields -o yaml`.
+
+`spec.target` cannot be combined with `spec.template`, `spec.databases` or
+`spec.rollout`.
+
+Status is reported on the resource:
+
+```sh
+$ kubectl get valssecret flink-datadog
+NAME            TARGET            READY   AGE
+flink-datadog   FlinkDeployment   True    2m
+$ kubectl get valssecret flink-datadog -o jsonpath='{.status.conditions[0]}{"\n"}{.status.target}'
+```
+
+`Ready=False` carries one of the reasons `FeatureDisabled`, `TargetNotAllowed`,
+`TargetNotFound` (patch mode), `RenderError`, `ApplyError`, with the message from the
+API server or template engine. The same is recorded as an Event.
+
+**GitOps.** Keep the target in Git *without* the injected field. ArgoCD will show the
+injected field as drift unless told otherwise:
+
+```yaml
+spec:
+  ignoreDifferences:
+    - group: flink.apache.org
+      kind: FlinkDeployment
+      managedFieldsManagers: [vals-operator]
+  syncPolicy:
+    syncOptions: [RespectIgnoreDifferences=true]
+```
+
+Flux applies with Server-Side Apply and only asserts fields present in its source, so
+no configuration is needed as long as the field is absent from Git.
 
 ## DbSecret
 

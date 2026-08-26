@@ -69,6 +69,9 @@ func init() {
 		dmetrics.SecretInfo,
 		dmetrics.VaultError,
 		dmetrics.VaultTokenError,
+		dmetrics.TargetApplyTotal,
+		dmetrics.TargetError,
+		dmetrics.TargetLastApplied,
 		dmetrics.SecretRetrieveTime,
 		dmetrics.SecretCreationTime,
 		dmetrics.DbSecretRevokationError,
@@ -89,6 +92,9 @@ func main() {
 	var disableNamespaceSync bool
 	var allowedNamespacesForSync string
 	var allowedBackendPaths string
+	var enableCustomTargets bool
+	var allowedTargetResources string
+	var targetDryRun bool
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -108,6 +114,14 @@ func main() {
 			"namespace of '*' applies to all, e.g. "+
 			"'team-a=ref+vault://database/creds/team-a;*=ref+awssecrets://shared'. "+
 			"Empty means all paths are allowed.")
+	flag.BoolVar(&enableCustomTargets, "enable-custom-targets", false,
+		"Allow ValsSecret.spec.target to render data into resources other than Secrets. "+
+			"Requires -allowed-target-resources.")
+	flag.StringVar(&allowedTargetResources, "allowed-target-resources", "",
+		"Comma separated list of resources (resource.group, core group omitted) that spec.target may write, "+
+			"e.g. configmaps,flinkdeployments.flink.apache.org. Empty means no resource is allowed.")
+	flag.BoolVar(&targetDryRun, "target-dry-run", true,
+		"Run a server-side dry-run before applying a custom target.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -146,6 +160,19 @@ func main() {
 	for _, ns := range nsSlice(allowedNamespacesForSync) {
 		if ns != "" {
 			allowedSyncNs[ns] = true
+		}
+	}
+
+	targetPolicy, err := controllers.NewTargetPolicy(enableCustomTargets, targetDryRun, allowedTargetResources)
+	if err != nil {
+		setupLog.Error(err, "Invalid -allowed-target-resources")
+		os.Exit(1)
+	}
+	if targetPolicy.Enabled {
+		if len(targetPolicy.AllowedResources()) == 0 {
+			setupLog.Info("Custom targets are enabled but -allowed-target-resources is empty: every spec.target will be rejected")
+		} else {
+			setupLog.Info("Custom targets are enabled", "allowedResources", targetPolicy.AllowedResources())
 		}
 	}
 
@@ -216,6 +243,7 @@ func main() {
 		DisableNamespaceSync:     disableNamespaceSync,
 		AllowedNamespacesForSync: allowedSyncNs,
 		BackendAuthorizer:        backendAuthorizer,
+		TargetPolicy:             targetPolicy,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ValsSecret")
 		os.Exit(1)

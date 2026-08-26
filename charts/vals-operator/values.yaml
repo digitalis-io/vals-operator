@@ -112,6 +112,25 @@ allowedNamespacesForSync: ""
 # a ValsSecret or DbSecret otherwise inherits its full reach.
 allowedBackendPaths: ""
 
+# Custom targets: render ValsSecret data into resources other than Secrets
+# (ConfigMaps, CRDs such as FlinkDeployment, ...) via `spec.target`.
+# See docs/usage.md#custom-targets and docs/security.md#custom-targets.
+customTargets:
+  # -- Renders `-enable-custom-targets`. Off by default: every `spec.target`
+  # is rejected with `Ready=False/FeatureDisabled` until enabled.
+  enabled: false
+  # -- Renders `-target-dry-run`. Server-side dry-run before each apply.
+  dryRun: true
+  # -- Resources that `spec.target` may write. Each entry renders both the
+  # `-allowed-target-resources` flag and the matching ClusterRole rule, so
+  # RBAC and the allow-list cannot drift. `group: ""` is the core group.
+  # Example:
+  #   - resource: configmaps
+  #     group: ""
+  #   - resource: flinkdeployments
+  #     group: flink.apache.org
+  allowedResources: []
+
 # -- Name of a single Secret loaded into the pod with `envFrom`,
 # e.g. `vals-operator-env`. Takes precedence over `secretEnv` when set.
 environmentSecret: ""
