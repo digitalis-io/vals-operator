@@ -7,6 +7,15 @@ Vals-operator uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-27
+
+### Added
+
+- `ValsSecret.spec.target` renders the resolved data into any namespaced resource — a ConfigMap, a `FlinkDeployment`, any CRD — instead of a Secret. `mode: create` creates and owns the object; `mode: patch` writes only the templated fields into an existing, GitOps-managed object with Server-Side Apply (field manager `vals-operator`) and removes them again on deletion. The feature is off by default: enable with `-enable-custom-targets` and list the permitted resources in `-allowed-target-resources`; `-target-dry-run` (default `true`) runs a server-side dry-run before each apply (Helm: `customTargets.enabled`, `customTargets.allowedResources`, `customTargets.dryRun`; the chart also renders the matching RBAC). Resources in the `rbac.authorization.k8s.io`, `admissionregistration.k8s.io`, `apiextensions.k8s.io`, `authentication.k8s.io` and `authorization.k8s.io` groups, core ServiceAccounts, Pods, Nodes, Namespaces and PersistentVolumes, and any cluster-scoped kind can never be targeted; the target is always in the `ValsSecret`'s own namespace. Status is reported through `status.conditions` (`Ready`) and `status.target`, new `kubectl get` columns, events and the `vals_operator_target_*` metrics. ([#83](https://github.com/digitalis-io/vals-operator/issues/83))
+- The operator's ClusterRole now includes `valssecrets/status`, required for the new status reporting.
+
+## [0.9.0] - 2026-08-25
+
 ### Added
 
 - New `-disable-namespace-sync` flag to block all cross-namespace `ref+k8s://` references. When enabled, any `ref+k8s://` reference targeting a namespace other than the `ValsSecret`'s own namespace is rejected. Same-namespace references are unaffected. ([#91](https://github.com/digitalis-io/vals-operator/issues/91))
@@ -16,8 +25,6 @@ Vals-operator uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - ClickHouse is now supported as a database backend for password rotation (`databases[].driver: clickhouse`). Connects over the native protocol on port `9000` by default, logs in as `default` when no username is given, and supports the HTTP protocol and TLS through the new `protocol` and `tls` fields or a per-host scheme (`tcp://`, `tls://`, `http://`, `https://`). Rotation uses `ALTER USER`, which requires SQL-driven access control. ([#103](https://github.com/digitalis-io/vals-operator/issues/103))
 - New `clickhouse` CI workflow runs the ClickHouse unit and integration tests on every pull request touching the database backends, exercising rotation over the native, native+TLS, HTTP and HTTPS endpoints of a real server. Run the same suite locally with `make test-clickhouse`. ([#103](https://github.com/digitalis-io/vals-operator/issues/103))
 - `DbSecret` resources now validate `spec.vault.mount`, `spec.vault.role`, `spec.secretName` and `spec.rollout[].kind` at the API level.
-- `ValsSecret.spec.target` renders the resolved data into any namespaced resource — a ConfigMap, a `FlinkDeployment`, any CRD — instead of a Secret. `mode: create` creates and owns the object; `mode: patch` writes only the templated fields into an existing, GitOps-managed object with Server-Side Apply (field manager `vals-operator`) and removes them again on deletion. The feature is off by default: enable with `-enable-custom-targets` and list the permitted resources in `-allowed-target-resources`; `-target-dry-run` (default `true`) runs a server-side dry-run before each apply (Helm: `customTargets.enabled`, `customTargets.allowedResources`, `customTargets.dryRun`; the chart also renders the matching RBAC). Resources in the `rbac.authorization.k8s.io`, `admissionregistration.k8s.io`, `apiextensions.k8s.io`, `authentication.k8s.io` and `authorization.k8s.io` groups, core ServiceAccounts, Pods, Nodes, Namespaces and PersistentVolumes, and any cluster-scoped kind can never be targeted; the target is always in the `ValsSecret`'s own namespace. Status is reported through `status.conditions` (`Ready`) and `status.target`, new `kubectl get` columns, events and the `vals_operator_target_*` metrics. ([#83](https://github.com/digitalis-io/vals-operator/issues/83))
-- The operator's ClusterRole now includes `valssecrets/status`, required for the new status reporting.
 
 ### Documentation
 
