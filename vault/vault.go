@@ -33,32 +33,38 @@ type VaultDbSecret struct {
 	ConnectionURL string `json:"connection_url"`
 }
 
-func tokenRenewer(c SecretsClient) {
+func setTokenEnvVars(c SecretsClient, token string) error {
+	tokenEnvVar := fmt.Sprintf("%s_TOKEN", strings.ToUpper(c.Backend().String()))
+	if err := os.Setenv(tokenEnvVar, token); err != nil {
+		return err
+	}
+	if c.Backend() == BackendOpenBao {
+		if err := os.Setenv("VAULT_TOKEN", token); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// tokenRenewer manages the token lifecycle. Pass the initial login response from
+// Start() to avoid a redundant second login on startup.
+func tokenRenewer(c SecretsClient, initial *SecretResponse) {
+	loginResp := initial
 	for {
-		loginResp, err := c.Login(context.TODO())
-		if err != nil {
-			dmetrics.VaultTokenError.WithLabelValues(c.Address()).SetToCurrentTime()
-			log.Error(err, "unable to authenticate", "backend", c.Backend())
-			return
+		if loginResp == nil {
+			var err error
+			loginResp, err = c.Login(context.TODO())
+			if err != nil {
+				dmetrics.VaultTokenError.WithLabelValues(c.Address()).SetToCurrentTime()
+				log.Error(err, "unable to authenticate", "backend", c.Backend())
+				return
+			}
 		}
 
-		// Set token in environment for compatibility
-		tokenEnvVar := fmt.Sprintf("%s_TOKEN", strings.ToUpper(c.Backend().String()))
-		err = os.Setenv(tokenEnvVar, loginResp.Auth.ClientToken)
-		if err != nil {
+		if err := setTokenEnvVars(c, loginResp.Auth.ClientToken); err != nil {
 			dmetrics.VaultTokenError.WithLabelValues(c.Address()).SetToCurrentTime()
 			log.Error(err, "Cannot set token env variable", "backend", c.Backend())
 			return
-		}
-
-		// Also set VAULT_TOKEN when using OpenBao for vals library compatibility
-		if c.Backend() == BackendOpenBao {
-			err = os.Setenv("VAULT_TOKEN", loginResp.Auth.ClientToken)
-			if err != nil {
-				dmetrics.VaultTokenError.WithLabelValues(c.Address()).SetToCurrentTime()
-				log.Error(err, "Cannot set VAULT_TOKEN for vals library compatibility")
-				return
-			}
 		}
 
 		c.SetToken(loginResp.Auth.ClientToken)
@@ -72,6 +78,7 @@ func tokenRenewer(c SecretsClient) {
 
 		dmetrics.VaultTokenError.WithLabelValues(c.Address()).Set(0)
 		time.Sleep(60 * time.Second)
+		loginResp = nil
 	}
 }
 
@@ -108,17 +115,8 @@ func manageTokenLifecycle(c SecretsClient, token *SecretResponse) error {
 		// Successfully completed renewal
 		case renewal := <-watcher.RenewCh():
 			log.Info("Successfully renewed token", "backend", c.Backend())
-			tokenEnvVar := fmt.Sprintf("%s_TOKEN", strings.ToUpper(c.Backend().String()))
-			err = os.Setenv(tokenEnvVar, renewal.Secret.Auth.ClientToken)
-			if err != nil {
+			if err = setTokenEnvVars(c, renewal.Secret.Auth.ClientToken); err != nil {
 				return err
-			}
-			// Also set VAULT_TOKEN when using OpenBao for vals library compatibility
-			if c.Backend() == BackendOpenBao {
-				err = os.Setenv("VAULT_TOKEN", renewal.Secret.Auth.ClientToken)
-				if err != nil {
-					return err
-				}
 			}
 		}
 	}
@@ -290,7 +288,20 @@ func Start() error {
 
 	dmetrics.VaultError.WithLabelValues(client.Address()).Set(0)
 
-	go tokenRenewer(client)
+	// Perform initial login synchronously so VAULT_TOKEN is set before the
+	// reconciler starts processing ValsSecret resources.
+	loginResp, err := client.Login(context.TODO())
+	if err != nil {
+		dmetrics.VaultError.WithLabelValues(client.Address()).SetToCurrentTime()
+		log.Error(err, "Initial login to secrets backend failed")
+		return err
+	}
+	if err = setTokenEnvVars(client, loginResp.Auth.ClientToken); err != nil {
+		return err
+	}
+	client.SetToken(loginResp.Auth.ClientToken)
+
+	go tokenRenewer(client, loginResp)
 
 	return nil
 }
