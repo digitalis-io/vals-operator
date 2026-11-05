@@ -2,6 +2,12 @@
 #
 # Start or stop a ClickHouse server for the ClickHouse integration tests.
 #
+# Use this script when you need TLS endpoint coverage (native TLS on 9440 and
+# HTTPS on 8443).  For tests that also require a secrets backend (OpenBao KV
+# rotation path, DbSecret path via the ClickHouse database plugin), use
+# hack/docker-compose-e2e.yml instead, which starts ClickHouse alongside an
+# OpenBao dev server but does not add TLS endpoints.
+#
 # The server is configured the way the tests need it: the `default` user has a
 # password, SQL-driven access control and remote access, and all four
 # endpoints are enabled — native 9000, native TLS 9440, HTTP 8123 and HTTPS
@@ -31,7 +37,7 @@ log() { printf '%s [clickhouse-test-server] %s\n' "$(date -u +%H:%M:%S)" "$*" >&
 die() { log "ERROR: $*"; exit 1; }
 
 usage() {
-    sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '3,27p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 configure() {
