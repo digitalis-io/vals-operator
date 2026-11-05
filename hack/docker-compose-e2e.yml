@@ -1,0 +1,126 @@
+# End-to-end test stack: ClickHouse + OpenBao dev server with the ClickHouse
+# database plugin built in and registered.
+#
+# When to use this vs hack/clickhouse-test-server.sh:
+#   - Use this stack for tests that involve a secrets backend (OpenBao KV
+#     rotation path, OpenBao ClickHouse database plugin / DbSecret path).
+#   - Use clickhouse-test-server.sh for TLS endpoint coverage (native TLS on
+#     9440 and HTTPS on 8443), which this stack does not provide.
+#
+# Start locally:
+#   docker compose -f hack/docker-compose-e2e.yml up -d --build --wait clickhouse openbao
+#   docker compose -f hack/docker-compose-e2e.yml run --rm configure
+#
+# Run the integration tests:
+#   OPENBAO_ADDR=http://127.0.0.1:8200 OPENBAO_TOKEN=root \
+#   BAO_ADDR=http://127.0.0.1:8200 BAO_TOKEN=root \
+#   CLICKHOUSE_NATIVE_ADDR=127.0.0.1:9000 CLICKHOUSE_LOGIN_PASSWORD=clickhouse \
+#   go test -tags integration -race ./db/clickhouse/... ./vault/...
+#
+# Credentials:
+#   ClickHouse:  default / ${CLICKHOUSE_PASSWORD:-clickhouse}  native :9000  HTTP :8123
+#   OpenBao:     root token "root"  :8200
+#   KV path:     secret/vals-clickhouse  (password for rotation test)
+#   DB mount:    clickhouse/  (ClickHouse database plugin)
+#   DB role:     readonly
+#
+# Reset (removes all data and built images):
+#   docker compose -f hack/docker-compose-e2e.yml down -v --rmi local
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-24.8}
+    container_name: vals-e2e-clickhouse
+    environment:
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--password", "${CLICKHOUSE_PASSWORD:-clickhouse}", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # OpenBao dev server with the ClickHouse database plugin registered.
+  # Built from the plugin repo; pinned to a specific commit for reproducibility.
+  openbao:
+    build:
+      context: "https://github.com/digitalis-io/openbao-plugin-database-clickhouse.git#304d722b23d6a71da917eb4bfaa7ee5b3154527c"
+      target: default
+      args:
+        OPENBAO_VERSION: ${OPENBAO_VERSION:-2.4.4}
+    image: vals-openbao-clickhouse:e2e
+    container_name: vals-e2e-openbao
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    environment:
+      BAO_ADDR: http://127.0.0.1:8200
+      BAO_TOKEN: ${BAO_ROOT_TOKEN:-root}
+    command:
+      - server
+      - -dev
+      - -dev-no-store-token
+      - -dev-root-token-id=${BAO_ROOT_TOKEN:-root}
+      - -dev-listen-address=0.0.0.0:8200
+      - -dev-plugin-dir=/openbao/plugins
+    ports:
+      - "${OPENBAO_PORT:-8200}:8200"
+    cap_add:
+      - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "bao", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  # One-shot: enables the database secrets engine, registers the ClickHouse
+  # plugin, creates a "readonly" role, and stores a KV secret for the rotation
+  # test. Exits 0 when issuance from the plugin works.
+  configure:
+    image: vals-openbao-clickhouse:e2e
+    container_name: vals-e2e-configure
+    depends_on:
+      openbao:
+        condition: service_healthy
+    environment:
+      BAO_ADDR: http://openbao:8200
+      BAO_TOKEN: ${BAO_ROOT_TOKEN:-root}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+    restart: "no"
+    entrypoint:
+      - sh
+      - -ec
+      - |
+        # Database secrets engine at "clickhouse/" so that GetDbCredentials
+        # (which reads <mount>/config/<mount>) finds the connection details.
+        bao secrets enable -path=clickhouse database 2>/dev/null || true
+        bao secrets enable -path=secret kv-v2 2>/dev/null || true
+
+        bao write clickhouse/config/clickhouse \
+          plugin_name=clickhouse-database-plugin \
+          allowed_roles="*" \
+          connection_url="clickhouse://{{username}}:{{password}}@clickhouse:9000/default" \
+          username=default \
+          password="$${CLICKHOUSE_PASSWORD}"
+
+        bao write clickhouse/roles/readonly \
+          db_name=clickhouse \
+          creation_statements="CREATE USER '{{name}}' IDENTIFIED WITH sha256_password BY '{{password}}'; GRANT SELECT ON default.* TO '{{name}}';" \
+          revocation_statements="DROP USER IF EXISTS '{{name}}';" \
+          default_ttl=1h \
+          max_ttl=24h
+
+        # KV secret for the ValsSecret rotation-path test.
+        bao kv put secret/vals-clickhouse password=rotated_password_123
+
+        echo "Issuing a test credential to verify setup:"
+        bao read clickhouse/creds/readonly
