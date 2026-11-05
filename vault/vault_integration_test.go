@@ -99,7 +99,6 @@ func TestGetDbCredentialsUnreachable(t *testing.T) {
 	resetClient(t)
 	t.Setenv("BAO_ADDR", "http://127.0.0.1:1") // port 1 is unreachable
 	t.Setenv("BAO_TOKEN", "root")
-	t.Setenv("BAO_MAX_RETRIES", "0")
 
 	_, err := GetDbCredentials("readonly", "clickhouse")
 	if err == nil {

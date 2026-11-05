@@ -37,7 +37,7 @@ log() { printf '%s [clickhouse-test-server] %s\n' "$(date -u +%H:%M:%S)" "$*" >&
 die() { log "ERROR: $*"; exit 1; }
 
 usage() {
-    sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '3,27p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 configure() {

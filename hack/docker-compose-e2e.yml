@@ -35,8 +35,8 @@ services:
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
     ports:
-      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
-      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+      - "127.0.0.1:${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "127.0.0.1:${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
     ulimits:
       nofile:
         soft: 262144
@@ -72,7 +72,7 @@ services:
       - -dev-listen-address=0.0.0.0:8200
       - -dev-plugin-dir=/openbao/plugins
     ports:
-      - "${OPENBAO_PORT:-8200}:8200"
+      - "127.0.0.1:${OPENBAO_PORT:-8200}:8200"
     cap_add:
       - IPC_LOCK
     healthcheck:

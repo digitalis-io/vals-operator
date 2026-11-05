@@ -186,17 +186,15 @@ func TestOpenBaoUnreachable(t *testing.T) {
 }
 
 // TestOpenBaoMissingRole verifies that requesting credentials for a
-// non-existent role surfaces an error.
+// non-existent role returns no secret (nil secret or error).
 func TestOpenBaoMissingRole(t *testing.T) {
 	bao := baoClientForE2E(t)
 
 	s, err := bao.Logical().Read("clickhouse/creds/nonexistent_role_xyz")
-	if err == nil && s == nil {
-		// OpenBao 404 returns (nil, nil) from Logical().Read.
-		return
-	}
+	// OpenBao returns (nil, nil) for a 404; either that or an error is acceptable.
+	// A non-nil secret means the role unexpectedly exists.
 	if err == nil && s != nil {
-		t.Error("expected error or nil secret for a non-existent role, got a valid secret")
+		t.Error("expected nil secret or error for a non-existent role, got a valid secret")
 	}
 }
 
@@ -210,20 +208,18 @@ func TestOpenBaoAlterUserDenied(t *testing.T) {
 	// Issue credentials from the readonly role; they have only SELECT access,
 	// not ALTER USER / ACCESS MANAGEMENT.
 	s, err := bao.Logical().Read("clickhouse/creds/readonly")
-	if err != nil || s == nil {
+	if err != nil {
 		t.Fatalf("cannot read readonly creds from OpenBao: %v", err)
+	}
+	if s == nil {
+		t.Fatal("cannot read readonly creds from OpenBao: nil secret")
 	}
 	limitedUser, _ := s.Data["username"].(string)
 	limitedPass, _ := s.Data["password"].(string)
 	if limitedUser == "" || limitedPass == "" {
 		t.Fatalf("OpenBao returned empty credentials: %v", s.Data)
 	}
-	t.Cleanup(func() {
-		conn := openConn(t, addr)
-		ctx, cancel := context.WithTimeout(context.Background(), e2eTestTimeout)
-		defer cancel()
-		_ = conn.Exec(ctx, "DROP USER IF EXISTS `"+limitedUser+"`")
-	})
+	// No cleanup needed: OpenBao revokes the dynamic user when the lease expires.
 
 	createTestUser(t, addr, "vals_alter_target", "somepassword")
 

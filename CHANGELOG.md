@@ -9,7 +9,7 @@ Vals-operator uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- OpenBao-backed ClickHouse e2e test stack (`hack/docker-compose-e2e.yml`): ClickHouse plus an OpenBao dev server with the ClickHouse database plugin registered. Integration tests cover the ValsSecret rotation path (`db.UpdateUserPassword` with a password from OpenBao KV), the DbSecret path (`vault.GetDbCredentials` returning dynamic ClickHouse credentials), and failure cases (unreachable OpenBao, missing role, `ALTER USER` denied). ([#107](https://github.com/digitalis-io/vals-operator/issues/107))
+- ClickHouse + OpenBao e2e test stack (`hack/docker-compose-e2e.yml`): rotation path, DbSecret path, and failure cases. ([#107](https://github.com/digitalis-io/vals-operator/issues/107))
 
 ### Fixed
 
