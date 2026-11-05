@@ -276,8 +276,9 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	updated, err := r.upsertSecret(&secret, data)
 	if err != nil {
+		dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 		r.Log.Error(err, "Failed to create secret", "name", secret.Name, "namespace", secret.Namespace)
-		return ctrl.Result{}, nil
+		return r.errorBackoff(&secret)
 	}
 
 	elapsedProcess := time.Since(start).Milliseconds() // Calculate the elapsed time
