@@ -9,6 +9,7 @@ Vals-operator uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A change to a `ValsSecret`'s spec, such as a new key under `spec.data`, did not reach its Secret until the Secret's TTL expired, so a workload that mounts the new key failed until then. The operator now records the generation it last applied in a new status field, `status.secretGeneration`, and rewrites the Secret on the first reconcile after the generation changes. A spec change that leaves the data unchanged (for example `spec.ttl`) only updates the field: the Secret is not rewritten and nothing is restarted. A `ValsSecret` without a recorded generation (last applied by an earlier version, or taking over an existing Secret) waits for its TTL once, so upgrading does not re-read every backend at once. With `manageCrds: false`, apply the updated `ValsSecret` CRD; until then the operator keeps the TTL-only behaviour. ([#120](https://github.com/digitalis-io/vals-operator/issues/120))
 - Race condition on startup: `Start()` now performs the initial Vault/OpenBao login synchronously before returning, so `VAULT_TOKEN` is set in the environment before the reconciler processes any `ValsSecret` resources. The `tokenRenewer` goroutine receives the already-obtained token and skips the redundant second login. ([#115](https://github.com/digitalis-io/vals-operator/issues/115))
 
 ## [0.10.0] - 2026-08-27
