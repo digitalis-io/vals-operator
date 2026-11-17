@@ -6,7 +6,9 @@ on:
       - 'db/**'
       - 'apis/**'
       - 'controllers/**'
+      - 'vault/**'
       - 'hack/clickhouse-test-server.sh'
+      - 'hack/docker-compose-e2e.yml'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/clickhouse.yml'
@@ -57,3 +59,44 @@ jobs:
       - name: Stop ClickHouse
         if: always()
         run: ./hack/clickhouse-test-server.sh stop
+
+  clickhouse-openbao:
+    name: ClickHouse + OpenBao integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .go-version
+          cache: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build OpenBao image
+        run: docker compose -f hack/docker-compose-e2e.yml build openbao
+
+      - name: Start ClickHouse and OpenBao
+        run: docker compose -f hack/docker-compose-e2e.yml up -d --wait clickhouse openbao
+
+      - name: Configure OpenBao
+        run: docker compose -f hack/docker-compose-e2e.yml run --rm configure
+
+      - name: Integration tests
+        env:
+          OPENBAO_ADDR: http://127.0.0.1:8200
+          OPENBAO_TOKEN: root
+          BAO_ADDR: http://127.0.0.1:8200
+          BAO_TOKEN: root
+          CLICKHOUSE_NATIVE_ADDR: 127.0.0.1:9000
+          CLICKHOUSE_LOGIN_PASSWORD: clickhouse
+        run: go test -tags integration -race -v ./db/clickhouse/... ./vault/...
+
+      - name: Service logs
+        if: failure()
+        run: docker compose -f hack/docker-compose-e2e.yml logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f hack/docker-compose-e2e.yml down -v

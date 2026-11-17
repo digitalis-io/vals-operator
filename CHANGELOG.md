@@ -7,6 +7,10 @@ Vals-operator uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- ClickHouse + OpenBao e2e test stack (`hack/docker-compose-e2e.yml`): rotation path, DbSecret path, and failure cases. ([#107](https://github.com/digitalis-io/vals-operator/issues/107))
+
 ### Fixed
 
 - Race condition on startup: `Start()` now performs the initial Vault/OpenBao login synchronously before returning, so `VAULT_TOKEN` is set in the environment before the reconciler processes any `ValsSecret` resources. The `tokenRenewer` goroutine receives the already-obtained token and skips the redundant second login. ([#115](https://github.com/digitalis-io/vals-operator/issues/115))
