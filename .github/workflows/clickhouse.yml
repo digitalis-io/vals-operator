@@ -95,8 +95,8 @@ jobs:
 
       - name: Service logs
         if: failure()
-        run: docker compose -f hack/docker-compose-e2e.yml logs
+        run: docker compose -f hack/docker-compose-e2e.yml --profile clickhouse logs
 
       - name: Tear down
         if: always()
-        run: docker compose -f hack/docker-compose-e2e.yml down -v
+        run: docker compose -f hack/docker-compose-e2e.yml --profile clickhouse down -v

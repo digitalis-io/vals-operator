@@ -70,6 +70,18 @@ test-clickhouse: ## Run the ClickHouse integration tests against a throwaway con
 	go test -tags integration -race ./db/clickhouse/... ; \
 	status=$$? ; ./hack/clickhouse-test-server.sh stop ; exit $$status
 
+E2E_COMPOSE = docker compose -f hack/docker-compose-e2e.yml
+
+.PHONY: test-cassandra-e2e
+test-cassandra-e2e: ## Run the Cassandra + OpenBao integration tests (dynamic credentials, rotation) via docker compose.
+	( $(E2E_COMPOSE) --profile cassandra up -d --build --wait cassandra openbao \
+	&& $(E2E_COMPOSE) --profile cassandra run --rm configure-cassandra \
+	&& OPENBAO_ADDR=http://127.0.0.1:$${OPENBAO_PORT:-8200} OPENBAO_TOKEN=$${BAO_ROOT_TOKEN:-root} \
+	BAO_ADDR=http://127.0.0.1:$${OPENBAO_PORT:-8200} BAO_TOKEN=$${BAO_ROOT_TOKEN:-root} \
+	CASSANDRA_HOST=127.0.0.1 CASSANDRA_PORT=$${CASSANDRA_NATIVE_PORT:-9042} \
+	go test -tags integration -race -count=1 ./db/cassandra/... ./vault/... ) ; \
+	status=$$? ; $(E2E_COMPOSE) --profile cassandra down -v ; exit $$status
+
 ##@ Build
 
 .PHONY: build

@@ -1,5 +1,17 @@
-# End-to-end test stack: ClickHouse + OpenBao dev server with the ClickHouse
-# database plugin built in and registered.
+# End-to-end test stack: an OpenBao dev server (with the ClickHouse database
+# plugin built in and registered) plus one backend per compose profile:
+#
+#   clickhouse   ClickHouse + "configure" one-shot
+#   cassandra    Cassandra with PasswordAuthenticator + "configure-cassandra"
+#
+# The openbao service has no profile and is always started. clickhouse and
+# configure are gated behind the clickhouse profile, so a plain
+# "docker compose up" starts only openbao; name the services or pass
+# --profile clickhouse (also needed for down/logs).
+#
+# Overridable environment: OPENBAO_PORT (8200), BAO_ROOT_TOKEN (root),
+# CLICKHOUSE_NATIVE_PORT (9000), CASSANDRA_NATIVE_PORT (9042),
+# CASSANDRA_VERSION (4.1, flat "authenticator:" yaml form required).
 #
 # When to use this vs hack/clickhouse-test-server.sh:
 #   - Use this stack for tests that involve a secrets backend (OpenBao KV
@@ -24,11 +36,24 @@
 #   DB mount:    clickhouse/  (ClickHouse database plugin)
 #   DB role:     readonly
 #
+# ClickHouse scenario: see "Start locally" above. Profile-gated services are
+# started when named explicitly; use --profile clickhouse with down/logs.
+#
+# Cassandra scenario:
+#   docker compose -f hack/docker-compose-e2e.yml --profile cassandra up -d --build --wait cassandra openbao
+#   docker compose -f hack/docker-compose-e2e.yml --profile cassandra run --rm configure-cassandra
+#   make test-cassandra-e2e   (does all of the above, runs the tests and tears down)
+#
+#   Cassandra:   cassandra / cassandra  native :9042
+#   DB mount:    cassandra/  (built-in cassandra-database-plugin)
+#   DB roles:    readonly (TTL 1h, max 24h), shortlived (TTL 15s, max 30s)
+#
 # Reset (removes all data and built images):
-#   docker compose -f hack/docker-compose-e2e.yml down -v --rmi local
+#   docker compose -f hack/docker-compose-e2e.yml --profile clickhouse --profile cassandra down -v --rmi local
 
 services:
   clickhouse:
+    profiles: ["clickhouse"]
     image: clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-24.8}
     container_name: vals-e2e-clickhouse
     environment:
@@ -58,9 +83,6 @@ services:
         OPENBAO_VERSION: ${OPENBAO_VERSION:-2.4.4}
     image: vals-openbao-clickhouse:e2e
     container_name: vals-e2e-openbao
-    depends_on:
-      clickhouse:
-        condition: service_healthy
     environment:
       BAO_ADDR: http://127.0.0.1:8200
       BAO_TOKEN: ${BAO_ROOT_TOKEN:-root}
@@ -86,10 +108,13 @@ services:
   # plugin, creates a "readonly" role, and stores a KV secret for the rotation
   # test. Exits 0 when issuance from the plugin works.
   configure:
+    profiles: ["clickhouse"]
     image: vals-openbao-clickhouse:e2e
     container_name: vals-e2e-configure
     depends_on:
       openbao:
+        condition: service_healthy
+      clickhouse:
         condition: service_healthy
     environment:
       BAO_ADDR: http://openbao:8200
@@ -124,3 +149,82 @@ services:
 
         echo "Issuing a test credential to verify setup:"
         bao read clickhouse/creds/readonly
+
+  # Cassandra with authentication and authorization switched on, as the
+  # database plugin and the operator both log in with a role and password.
+  # The stock image has no environment switch for this, so cassandra.yaml is
+  # patched before the normal entrypoint runs. This relies on the flat
+  # "authenticator: <class>" form used up to Cassandra 4.1.
+  cassandra:
+    profiles: ["cassandra"]
+    image: cassandra:${CASSANDRA_VERSION:-4.1}
+    container_name: vals-e2e-cassandra
+    environment:
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
+      CASSANDRA_CLUSTER_NAME: vals-e2e
+    command:
+      - sh
+      - -ec
+      - |
+        sed -i \
+          -e 's/^authenticator:.*/authenticator: PasswordAuthenticator/' \
+          -e 's/^authorizer:.*/authorizer: CassandraAuthorizer/' \
+          /etc/cassandra/cassandra.yaml
+        exec docker-entrypoint.sh cassandra -f
+    ports:
+      - "127.0.0.1:${CASSANDRA_NATIVE_PORT:-9042}:9042"
+    healthcheck:
+      test: ["CMD", "cqlsh", "-u", "cassandra", "-p", "cassandra", "-e", "SELECT release_version FROM system.local"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 90s
+
+  # One-shot: enables the database secrets engine with the built-in Cassandra
+  # plugin and creates a long-lived "readonly" role and a "shortlived" role for
+  # rotation and expiry tests. Exits 0 when issuance from the plugin works.
+  configure-cassandra:
+    profiles: ["cassandra"]
+    image: vals-openbao-clickhouse:e2e
+    container_name: vals-e2e-configure-cassandra
+    depends_on:
+      openbao:
+        condition: service_healthy
+      cassandra:
+        condition: service_healthy
+    environment:
+      BAO_ADDR: http://openbao:8200
+      BAO_TOKEN: ${BAO_ROOT_TOKEN:-root}
+    restart: "no"
+    entrypoint:
+      - sh
+      - -ec
+      - |
+        bao secrets enable -path=cassandra database 2>/dev/null || true
+
+        bao write cassandra/config/cassandra \
+          plugin_name=cassandra-database-plugin \
+          allowed_roles="*" \
+          hosts=cassandra \
+          port=9042 \
+          protocol_version=4 \
+          username=cassandra \
+          password=cassandra
+
+        bao write cassandra/roles/readonly \
+          db_name=cassandra \
+          creation_statements="CREATE ROLE '{{username}}' WITH PASSWORD = '{{password}}' AND LOGIN = true; GRANT SELECT ON ALL KEYSPACES TO '{{username}}';" \
+          revocation_statements="DROP ROLE IF EXISTS '{{username}}';" \
+          default_ttl=1h \
+          max_ttl=24h
+
+        bao write cassandra/roles/shortlived \
+          db_name=cassandra \
+          creation_statements="CREATE ROLE '{{username}}' WITH PASSWORD = '{{password}}' AND LOGIN = true; GRANT SELECT ON ALL KEYSPACES TO '{{username}}';" \
+          revocation_statements="DROP ROLE IF EXISTS '{{username}}';" \
+          default_ttl=15s \
+          max_ttl=30s
+
+        echo "Issuing a test credential to verify setup:"
+        bao read cassandra/creds/readonly

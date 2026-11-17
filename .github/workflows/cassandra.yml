@@ -1,0 +1,58 @@
+name: cassandra
+
+on:
+  pull_request:
+    paths:
+      - 'db/cassandra/**'
+      - 'vault/**'
+      - 'hack/docker-compose-e2e.yml'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/cassandra.yml'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  cassandra-openbao:
+    name: Cassandra + OpenBao integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .go-version
+          cache: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build OpenBao image
+        run: docker compose -f hack/docker-compose-e2e.yml build openbao
+
+      - name: Start Cassandra and OpenBao
+        run: docker compose -f hack/docker-compose-e2e.yml --profile cassandra up -d --wait cassandra openbao
+
+      - name: Configure OpenBao
+        run: docker compose -f hack/docker-compose-e2e.yml --profile cassandra run --rm configure-cassandra
+
+      - name: Integration tests
+        env:
+          OPENBAO_ADDR: http://127.0.0.1:8200
+          OPENBAO_TOKEN: root
+          BAO_ADDR: http://127.0.0.1:8200
+          BAO_TOKEN: root
+          CASSANDRA_HOST: 127.0.0.1
+        run: go test -tags integration -race -count=1 -v ./db/cassandra/... ./vault/...
+
+      - name: Service logs
+        if: failure()
+        run: docker compose -f hack/docker-compose-e2e.yml --profile cassandra logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f hack/docker-compose-e2e.yml --profile cassandra down -v

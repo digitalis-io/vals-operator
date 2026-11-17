@@ -437,6 +437,12 @@ such a user fails with an error from the server and is logged as a failed host.
 The ClickHouse backend has integration tests covering every connection method above.
 Run them against a throwaway container with `make test-clickhouse` (requires Docker).
 
+The Cassandra backend and OpenBao dynamic credentials (login, lease revocation, TTL
+expiry, rotation) are covered by `make test-cassandra-e2e`. It starts Cassandra and an
+OpenBao dev server with `hack/docker-compose-e2e.yml` (ports 9042 and 8200 on
+127.0.0.1; override with `CASSANDRA_NATIVE_PORT`, `OPENBAO_PORT`, `BAO_ROOT_TOKEN`),
+runs the tests and removes the containers. It takes about two minutes.
+
 ## Troubleshooting
 
 The operator records what it did as Kubernetes Events on the resource:
