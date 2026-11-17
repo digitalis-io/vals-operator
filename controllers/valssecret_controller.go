@@ -299,8 +299,28 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			}
 		}
 	}
+	if err := r.recordSecretGeneration(ctx, &secret); err != nil {
+		return r.errorBackoff(&secret)
+	}
 	r.clearErrorCount(&secret)
 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
+}
+
+// recordSecretGeneration stores the generation just applied to the Secret, so
+// that hasSecretExpired applies the next spec change without waiting for the TTL.
+func (r *ValsSecretReconciler) recordSecretGeneration(ctx context.Context, sDef *secretv1.ValsSecret) error {
+	if sDef.Status.SecretGeneration == sDef.Generation {
+		return nil
+	}
+	// A merge patch carries no resourceVersion, so a stale cached copy cannot
+	// fail it with a conflict.
+	orig := sDef.DeepCopy()
+	sDef.Status.SecretGeneration = sDef.Generation
+	if err := r.Status().Patch(ctx, sDef, client.MergeFrom(orig)); err != nil {
+		r.Log.Error(err, "Cannot record the applied generation", "name", sDef.Name, "namespace", sDef.Namespace)
+		return err
+	}
+	return nil
 }
 
 // targetExpired reports whether a custom target must be re-evaluated: no
@@ -553,7 +573,18 @@ func (r *ValsSecretReconciler) getKeyFromK8sSecret(secretRef, valsSecretNamespac
 	return string(secret.Data[matchMap["key"]]), nil
 }
 
+// hasSecretExpired reports whether the Secret must be rewritten from the
+// backend: the spec changed since the Secret was last applied, or the TTL
+// elapsed.
 func (r *ValsSecretReconciler) hasSecretExpired(sDef secretv1.ValsSecret, secret *corev1.Secret) bool {
+	/* A zero SecretGeneration was never recorded: the ValsSecret was last applied
+	   by an earlier version, or the CRD lacks the field. It keeps the TTL rule
+	   until the next refresh records it, so an upgrade does not re-read every
+	   backend at once. */
+	if sDef.Status.SecretGeneration != 0 && sDef.Status.SecretGeneration != sDef.Generation {
+		return true
+	}
+
 	/* if no TTL, apply a sensible default */
 	if sDef.Spec.TTL <= 0 {
 		sDef.Spec.TTL = int64(r.DefaultTTL.Seconds())

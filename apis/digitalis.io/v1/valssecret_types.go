@@ -192,6 +192,12 @@ type ValsSecretStatus struct {
 	// Target records the last custom target apply.
 	// +optional
 	Target *TargetStatus `json:"target,omitempty"`
+	// SecretGeneration is the generation of this ValsSecret last applied to its
+	// Secret. When the generation moves past it, the backend is read again and
+	// the Secret updated without waiting for the TTL. Zero means not recorded
+	// yet: the TTL rule applies. Not used when spec.target is set.
+	// +optional
+	SecretGeneration int64 `json:"secretGeneration,omitempty"`
 }
 
 //+kubebuilder:object:root=true

@@ -65,7 +65,9 @@ This creates a Secret named `my-secret` and keeps it in sync with the backend.
 
 `ttl` exists to limit how often the operator calls the backend — some stores, such as
 [AWS Secrets Manager](https://aws.amazon.com/secrets-manager/pricing/), charge per
-call.
+call. It does not delay a change to the spec itself: once the operator has recorded
+the generation it applied (`status.secretGeneration`), a new key, another `ref` or a
+changed template reaches the Secret on the next reconcile.
 
 `encoding` defaults to `text`. Set it to `base64` to have the operator base64-decode
 the value it fetched before storing it, which is how you carry binary blobs and large
