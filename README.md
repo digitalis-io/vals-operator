@@ -34,6 +34,7 @@ is why the database features are here alongside plain secret syncing.
 - [Operator flags](#operator-flags)
 - [Security](#security)
 - [Documentation](#documentation)
+- [Community](#community)
 - [Contributing](#contributing)
 
 ## Demo
@@ -227,6 +228,10 @@ Full documentation is in [docs/](docs/index.md):
 - [EKS integration](docs/eks/index.md) — IRSA setup for reading AWS secrets.
 
 Runnable manifests live in [config/samples/](config/samples).
+
+## Community
+
+- [freelens-vals-extension](https://github.com/freelensapp/freelens-vals-extension) — a [Freelens](https://github.com/freelensapp/freelens) extension for viewing and managing `ValsSecret` and `DbSecret` resources from a GUI. Maintained independently of this project.
 
 ## Contributing
 
