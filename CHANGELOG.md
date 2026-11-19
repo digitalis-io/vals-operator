@@ -10,6 +10,11 @@ Vals-operator uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - ClickHouse + OpenBao e2e test stack (`hack/docker-compose-e2e.yml`): rotation path, DbSecret path, and failure cases. ([#107](https://github.com/digitalis-io/vals-operator/issues/107))
+- Cassandra profile for the e2e stack and `make test-cassandra-e2e`: dynamic credentials issued by OpenBao (login, lease revocation, TTL expiry), password rotation, and failure cases. ([#123](https://github.com/digitalis-io/vals-operator/issues/123))
+
+### Changed
+
+- `hack/docker-compose-e2e.yml` services are grouped by compose profile (`clickhouse`, `cassandra`); `clickhouse` and `configure` now need to be named explicitly or enabled with `--profile clickhouse`. `openbao` still starts by default.
 
 ### Fixed
 
