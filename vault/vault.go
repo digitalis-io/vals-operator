@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -172,6 +173,42 @@ func RevokeDbCredentials(leaseId string) error {
 	return client.Revoke(leaseId)
 }
 
+// parsePort normalises the connection_details "port" value. Some plugins
+// return a number, others (e.g. OpenBao's Cassandra plugin) a string.
+func parsePort(v any) string {
+	var raw string
+	switch p := v.(type) {
+	case json.Number:
+		raw = p.String()
+	case string:
+		raw = strings.TrimSpace(p)
+	case float64:
+		if p != float64(int64(p)) {
+			return ""
+		}
+		raw = strconv.FormatInt(int64(p), 10)
+	case int:
+		raw = strconv.Itoa(p)
+	case int64:
+		raw = strconv.FormatInt(p, 10)
+	default:
+		return ""
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 || n > 65535 {
+		return ""
+	}
+	return strconv.Itoa(n)
+}
+
+// appendPort adds the port to every host in a comma separated list.
+func appendPort(hosts, port string) string {
+	if hosts == "" || port == "" {
+		return hosts
+	}
+	return strings.ReplaceAll(hosts, ",", ":"+port+",") + ":" + port
+}
+
 func GetDbCredentials(role string, mount string) (VaultDbSecret, error) {
 	var dbSecret VaultDbSecret
 	var err error
@@ -220,20 +257,14 @@ func GetDbCredentials(role string, mount string) (VaultDbSecret, error) {
 			connectionURL = c
 		}
 
-		n, ok := conn["port"].(json.Number)
-		if ok {
-			port = n.String()
-		}
+		port = parsePort(conn["port"])
 
 		if connectionURL != "" {
 			connectionURL = strings.Replace(connectionURL, "{{username}}", s.Data["username"].(string), 1)
 			connectionURL = strings.Replace(connectionURL, "{{password}}", s.Data["password"].(string), 1)
 		}
 
-		if hosts != "" && port != "" {
-			rep := fmt.Sprintf(":%s,", port)
-			hosts = fmt.Sprintf("%s:%s", strings.Replace(hosts, ",", rep, -1), port)
-		}
+		hosts = appendPort(hosts, port)
 	}
 
 	dbSecret = VaultDbSecret{
