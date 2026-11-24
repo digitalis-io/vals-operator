@@ -11,10 +11,15 @@ Vals-operator uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - ClickHouse + OpenBao e2e test stack (`hack/docker-compose-e2e.yml`): rotation path, DbSecret path, and failure cases. ([#107](https://github.com/digitalis-io/vals-operator/issues/107))
 - Cassandra profile for the e2e stack and `make test-cassandra-e2e`: dynamic credentials issued by OpenBao (login, lease revocation, TTL expiry), password rotation, and failure cases. ([#123](https://github.com/digitalis-io/vals-operator/issues/123))
+- The annotation `vals-operator.digitalis.io/refresh-requested-at` on a `ValsSecret` reads its backend again on the next reconcile, without waiting for the TTL and without a spec change, in the way `reconcile.fluxcd.io/requestedAt` works for Flux. Each new value is one backend read; the value handled is recorded in a new status field, `status.lastHandledRefreshAt`, only after the read and the write of the Secret or custom target succeeded, so a failed refresh stays pending and is retried with the usual backoff. The Secret is rewritten and its rollouts run only when the data changed, and the annotation is not copied to the Secret. A change of the annotation triggers a reconcile at once. `DbSecret` is not covered. With `manageCrds: false`, apply the updated `ValsSecret` CRD before using it: an older CRD drops the status field, so the operator logs an error and remembers the handled request in memory only, and a restart reads the backend once more for every `ValsSecret` that still carries the annotation. ([#131](https://github.com/digitalis-io/vals-operator/issues/131))
 
 ### Changed
 
 - `hack/docker-compose-e2e.yml` services are grouped by compose profile (`clickhouse`, `cassandra`); `clickhouse` and `configure` now need to be named explicitly or enabled with `--profile clickhouse`. `openbao` still starts by default.
+
+### Deprecated
+
+- The annotation `vals-operator.digitalis.io/force: "true"` on a `ValsSecret`. It only ever applied to `spec.target`, where it re-applies the target on every reconcile for as long as it is set. Use `vals-operator.digitalis.io/refresh-requested-at` instead; the operator logs a deprecation message while `force` is set. ([#131](https://github.com/digitalis-io/vals-operator/issues/131))
 
 ### Fixed
 

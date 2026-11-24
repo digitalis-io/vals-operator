@@ -291,6 +291,7 @@ func (r *ValsSecretReconciler) reconcileTarget(ctx context.Context, vs *secretv1
 	if err == nil {
 		err = r.applyTarget(ctx, vs, data)
 	}
+	refreshHandled := ""
 	if err != nil {
 		reason := secretv1.ReasonApplyError
 		message := "custom target failed (see operator log)"
@@ -313,6 +314,10 @@ func (r *ValsSecretReconciler) reconcileTarget(ctx context.Context, vs *secretv1
 			ObservedGeneration: vs.Generation,
 		})
 	} else {
+		if r.refreshPending(vs) {
+			refreshHandled = vs.GetAnnotations()[refreshRequestedAtAnnotation]
+			vs.Status.LastHandledRefreshAt = refreshHandled
+		}
 		dmetrics.TargetError.WithLabelValues(vs.Name, vs.Namespace).Set(0)
 		if vs.Status.Target != nil {
 			dmetrics.TargetLastApplied.WithLabelValues(vs.Name, vs.Namespace, kind).Set(float64(vs.Status.Target.LastApplied.Unix()))
@@ -328,6 +333,9 @@ func (r *ValsSecretReconciler) reconcileTarget(ctx context.Context, vs *secretv1
 	if serr := r.Status().Update(ctx, vs); serr != nil {
 		r.Log.Error(serr, "Cannot update ValsSecret status", "name", vs.Name, "namespace", vs.Namespace)
 		return serr
+	}
+	if refreshHandled != "" {
+		r.checkRefreshRecorded(vs, refreshHandled)
 	}
 	if err == nil && vs.Status.Target != nil {
 		dmetrics.TargetApplyTotal.WithLabelValues(vs.Name, vs.Namespace, kind, mode, "success").Inc()

@@ -143,6 +143,8 @@ Set on a `ValsSecret` or `DbSecret`:
 | Annotation | Values | Description |
 |---|---|---|
 | `vals-operator.digitalis.io/record` | `"true"` | Record Kubernetes Events for this resource even when the operator runs with `-record-changes=false`. |
+| `vals-operator.digitalis.io/refresh-requested-at` | any string, conventionally an RFC 3339 time | `ValsSecret` only. Read the backend again on the next reconcile without waiting for the TTL, once per new value. The value handled is recorded in `status.lastHandledRefreshAt`. See [Usage](usage.md#fields). |
+| `vals-operator.digitalis.io/force` | `"true"` | **Deprecated**, use `refresh-requested-at`. `ValsSecret` with `spec.target` only: re-applies the target on every reconcile while it is set. |
 
 The operator also writes its own annotations onto the Secrets it manages
 (`last-updated`, `lease-id`, `lease-duration`, `expires-on`, `hash`) and onto the pod
