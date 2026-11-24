@@ -42,6 +42,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	secretv1 "digitalis.io/vals-operator/apis/digitalis.io/v1"
@@ -74,6 +75,11 @@ type ValsSecretReconciler struct {
 
 	errorCounts map[string]int
 	errMu       sync.Mutex
+
+	// unrecordedRefresh holds, per ValsSecret, a refresh request handled but
+	// dropped from the status by a CRD without status.lastHandledRefreshAt.
+	unrecordedRefresh map[string]string
+	refreshMu         sync.Mutex
 }
 
 //+kubebuilder:rbac:groups=digitalis.io,resources=valssecrets,verbs=get;list;watch;create;update;patch;delete
@@ -83,12 +89,75 @@ type ValsSecretReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *ValsSecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Recorder = mgr.GetEventRecorderFor("Secrets")
-	pred := predicate.GenerationChangedPredicate{}
+	pred := predicate.Or[client.Object](predicate.GenerationChangedPredicate{}, refreshRequestedPredicate())
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&secretv1.ValsSecret{}).
 		Owns(&corev1.Secret{}).WithEventFilter(pred).
 		Complete(r)
+}
+
+// refreshRequestedPredicate passes an update that changes the refresh-requested-at
+// annotation. An annotation does not bump the generation, so without it the
+// request would wait for the next periodic requeue.
+func refreshRequestedPredicate() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc:  func(event.CreateEvent) bool { return false },
+		DeleteFunc:  func(event.DeleteEvent) bool { return false },
+		GenericFunc: func(event.GenericEvent) bool { return false },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			if e.ObjectOld == nil || e.ObjectNew == nil {
+				return false
+			}
+			return e.ObjectOld.GetAnnotations()[refreshRequestedAtAnnotation] !=
+				e.ObjectNew.GetAnnotations()[refreshRequestedAtAnnotation]
+		},
+	}
+}
+
+// refreshPending reports whether the refresh-requested-at annotation holds a
+// request that has not been handled yet.
+func (r *ValsSecretReconciler) refreshPending(sDef *secretv1.ValsSecret) bool {
+	requested := sDef.GetAnnotations()[refreshRequestedAtAnnotation]
+	if requested == "" || requested == sDef.Status.LastHandledRefreshAt {
+		return false
+	}
+	r.refreshMu.Lock()
+	defer r.refreshMu.Unlock()
+	return r.unrecordedRefresh[refreshKey(sDef)] != requested
+}
+
+func refreshKey(sDef *secretv1.ValsSecret) string {
+	return sDef.Namespace + "/" + sDef.Name
+}
+
+// checkRefreshRecorded inspects the status returned by the API server after
+// the refresh request requested was recorded. A CRD older than
+// status.lastHandledRefreshAt prunes the field without an error, and the request
+// would stay pending and read the backend on every reconcile. The handled value
+// is kept in memory instead, so each request reads the backend once per
+// operator process until the CRD is updated.
+func (r *ValsSecretReconciler) checkRefreshRecorded(sDef *secretv1.ValsSecret, requested string) {
+	r.refreshMu.Lock()
+	defer r.refreshMu.Unlock()
+	key := refreshKey(sDef)
+	if sDef.Status.LastHandledRefreshAt == requested {
+		delete(r.unrecordedRefresh, key)
+		return
+	}
+	r.Log.Error(nil, "The API server dropped status.lastHandledRefreshAt: apply the updated ValsSecret CRD. "+
+		"Until then a refresh request is remembered only until the operator restarts",
+		"name", sDef.Name, "namespace", sDef.Namespace)
+	if r.unrecordedRefresh == nil {
+		r.unrecordedRefresh = map[string]string{}
+	}
+	r.unrecordedRefresh[key] = requested
+}
+
+func (r *ValsSecretReconciler) forgetRefresh(sDef *secretv1.ValsSecret) {
+	r.refreshMu.Lock()
+	defer r.refreshMu.Unlock()
+	delete(r.unrecordedRefresh, refreshKey(sDef))
 }
 
 // Reconcile is the main function
@@ -116,6 +185,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	} else {
 		// The object is being deleted
 		r.clearErrorCount(&secret)
+		r.forgetRefresh(&secret)
 		if utils.ContainsString(secret.GetFinalizers(), valsSecretFinalizerName) {
 			// our finalizer is present, so lets handle any external dependency
 			var err error
@@ -299,33 +369,44 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			}
 		}
 	}
-	if err := r.recordSecretGeneration(ctx, &secret); err != nil {
+	if err := r.recordApplied(ctx, &secret); err != nil {
 		return r.errorBackoff(&secret)
 	}
 	r.clearErrorCount(&secret)
 	return ctrl.Result{RequeueAfter: r.ReconciliationPeriod}, nil
 }
 
-// recordSecretGeneration stores the generation just applied to the Secret, so
-// that hasSecretExpired applies the next spec change without waiting for the TTL.
-func (r *ValsSecretReconciler) recordSecretGeneration(ctx context.Context, sDef *secretv1.ValsSecret) error {
-	if sDef.Status.SecretGeneration == sDef.Generation {
+// recordApplied stores the generation just applied to the Secret and the
+// refresh request just handled, so that hasSecretExpired applies the next spec
+// change or refresh request without waiting for the TTL.
+func (r *ValsSecretReconciler) recordApplied(ctx context.Context, sDef *secretv1.ValsSecret) error {
+	pending := r.refreshPending(sDef)
+	if sDef.Status.SecretGeneration == sDef.Generation && !pending {
 		return nil
 	}
+	// The value this reconcile read for. A newer request written meanwhile
+	// differs from it and is handled on the next reconcile.
+	requested := sDef.GetAnnotations()[refreshRequestedAtAnnotation]
 	// A merge patch carries no resourceVersion, so a stale cached copy cannot
 	// fail it with a conflict.
 	orig := sDef.DeepCopy()
 	sDef.Status.SecretGeneration = sDef.Generation
+	if pending {
+		sDef.Status.LastHandledRefreshAt = requested
+	}
 	if err := r.Status().Patch(ctx, sDef, client.MergeFrom(orig)); err != nil {
 		r.Log.Error(err, "Cannot record the applied generation", "name", sDef.Name, "namespace", sDef.Namespace)
 		return err
+	}
+	if pending {
+		r.checkRefreshRecorded(sDef, requested)
 	}
 	return nil
 }
 
 // targetExpired reports whether a custom target must be re-evaluated: no
-// successful apply yet, the ValsSecret generation changed since, the force
-// annotation is set, or the TTL elapsed.
+// successful apply yet, the ValsSecret generation changed since, a refresh is
+// requested, the deprecated force annotation is set, or the TTL elapsed.
 func (r *ValsSecretReconciler) targetExpired(sDef *secretv1.ValsSecret) bool {
 	st := sDef.Status.Target
 	if st == nil || st.LastApplied.IsZero() {
@@ -335,7 +416,13 @@ func (r *ValsSecretReconciler) targetExpired(sDef *secretv1.ValsSecret) bool {
 	if ready == nil || ready.Status != metav1.ConditionTrue || ready.ObservedGeneration != sDef.Generation {
 		return true
 	}
+	if r.refreshPending(sDef) {
+		return true
+	}
 	if sDef.GetAnnotations()[forceCreateAnnotation] == "true" {
+		r.Log.Info("The force annotation is deprecated and reads the backend on every reconcile; set "+
+			refreshRequestedAtAnnotation+" instead",
+			"name", sDef.Name, "namespace", sDef.Namespace)
 		return true
 	}
 	ttl := time.Duration(sDef.Spec.TTL) * time.Second
@@ -409,6 +496,9 @@ func (r *ValsSecretReconciler) upsertSecret(sDef *secretv1.ValsSecret, data map[
 	utils.MergeMap(secret.ObjectMeta.Annotations, sDef.ObjectMeta.Annotations)
 	secret.ObjectMeta.Annotations[lastUpdatedAnnotation] = time.Now().UTC().Format(timeLayout)
 	delete(secret.ObjectMeta.Annotations, corev1.LastAppliedConfigAnnotation)
+	// A request for the ValsSecret, not data of the Secret: copying it would
+	// rewrite the Secret and run the rollouts on every request.
+	delete(secret.ObjectMeta.Annotations, refreshRequestedAtAnnotation)
 	secret.ResourceVersion = ""
 
 	if err = controllerutil.SetControllerReference(sDef, secret, r.Scheme()); err != nil {
@@ -506,7 +596,7 @@ func (r *ValsSecretReconciler) secretNeedsUpdate(sDef *secretv1.ValsSecret, secr
 		!utils.StringMapsMatch(
 			secret.ObjectMeta.Annotations,
 			sDef.ObjectMeta.Annotations,
-			[]string{"kubectl.kubernetes.io/last-applied-configuration", "vals-operator.digitalis.io/last-updated"}) ||
+			[]string{corev1.LastAppliedConfigAnnotation, lastUpdatedAnnotation, refreshRequestedAtAnnotation}) ||
 		!utils.StringMapsMatch(
 			secret.ObjectMeta.Labels,
 			sDef.ObjectMeta.Labels,
@@ -574,9 +664,13 @@ func (r *ValsSecretReconciler) getKeyFromK8sSecret(secretRef, valsSecretNamespac
 }
 
 // hasSecretExpired reports whether the Secret must be rewritten from the
-// backend: the spec changed since the Secret was last applied, or the TTL
-// elapsed.
+// backend: a refresh is requested, the spec changed since the Secret was last
+// applied, or the TTL elapsed.
 func (r *ValsSecretReconciler) hasSecretExpired(sDef secretv1.ValsSecret, secret *corev1.Secret) bool {
+	if r.refreshPending(&sDef) {
+		return true
+	}
+
 	/* A zero SecretGeneration was never recorded: the ValsSecret was last applied
 	   by an earlier version, or the CRD lacks the field. It keeps the TTL rule
 	   until the next refresh records it, so an upgrade does not re-read every

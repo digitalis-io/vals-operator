@@ -198,6 +198,14 @@ type ValsSecretStatus struct {
 	// yet: the TTL rule applies. Not used when spec.target is set.
 	// +optional
 	SecretGeneration int64 `json:"secretGeneration,omitempty"`
+	// LastHandledRefreshAt is the value of the
+	// vals-operator.digitalis.io/refresh-requested-at annotation last handled.
+	// While the annotation holds another value, the next reconcile reads the
+	// backend again without waiting for the TTL. It is recorded only after the
+	// backend was read and the Secret or target applied, so a failed refresh
+	// stays pending and is retried.
+	// +optional
+	LastHandledRefreshAt string `json:"lastHandledRefreshAt,omitempty"`
 }
 
 //+kubebuilder:object:root=true

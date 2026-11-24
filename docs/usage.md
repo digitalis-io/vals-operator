@@ -69,6 +69,27 @@ call. It does not delay a change to the spec itself: once the operator has recor
 the generation it applied (`status.secretGeneration`), a new key, another `ref` or a
 changed template reaches the Secret on the next reconcile.
 
+To read the backend again before the TTL runs out — after rotating a value in the
+store, for example — set the annotation `vals-operator.digitalis.io/refresh-requested-at`
+on the `ValsSecret` to a new value, conventionally the current time:
+
+```sh
+kubectl annotate valssecret my-secret --overwrite \
+  vals-operator.digitalis.io/refresh-requested-at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+The operator reads the backend on the next reconcile and records the value it handled
+in `status.lastHandledRefreshAt`. Each new value is one backend read, like a spec
+change; leaving the annotation in place reads nothing more. The Secret is rewritten
+and its rollouts run only when the data changed. If the read fails, the request stays
+pending and is retried with the usual backoff. The annotation is not copied to the
+Secret. It works the same for [custom targets](#custom-targets), but not for a
+`DbSecret`, where a refresh would issue new credentials and revoke the old lease.
+
+Nothing limits how often a client sets a new value, so a script or a button that
+writes it repeatedly reads the backend as often — mind this with stores that charge
+per call.
+
 `encoding` defaults to `text`. Set it to `base64` to have the operator base64-decode
 the value it fetched before storing it, which is how you carry binary blobs and large
 configuration files through a backend that only holds strings. It has no effect on
