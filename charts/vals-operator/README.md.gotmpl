@@ -27,8 +27,8 @@ Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/helm
 The operator needs credentials for at least one secrets backend. See
 [Secrets backends](https://github.com/digitalis-io/vals-operator/blob/main/docs/backends.md).
 
-On any cluster where namespaces are not all equally trusted, also set `allowedBackendPaths` and
-restrict cross-namespace `ref+k8s://` references — see
+On any cluster where namespaces are not all equally trusted, also set `allowedBackendPaths`,
+leave `allowedExtraProviders` empty, and restrict cross-namespace `ref+k8s://` references — see
 [Security](https://github.com/digitalis-io/vals-operator/blob/main/docs/security.md).
 
 {{ template "chart.maintainersSection" . }}

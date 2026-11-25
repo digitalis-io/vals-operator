@@ -70,6 +70,9 @@ type ValsSecretReconciler struct {
 	// one allowlist governs both resources. A nil or unconfigured authorizer
 	// permits everything.
 	BackendAuthorizer *BackendAuthorizer
+	// RefPolicy validates the shape of every reference before it is authorized
+	// or evaluated. A nil policy rejects every opt-in provider.
+	RefPolicy *RefPolicy
 	// TargetPolicy gates and allow-lists spec.target. Nil disables the feature.
 	TargetPolicy *TargetPolicy
 
@@ -244,9 +247,17 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	/* Authorise every reference before touching any backend, so a denied
 	   reference results in no read at all. Restricting a DbSecret's mount and role
 	   is worthless on its own: the same dynamic credentials are reachable through a
-	   plain `ref+vault://<mount>/creds/<role>` here. */
+	   plain `ref+vault://<mount>/creds/<role>` here. The shape check runs first and
+	   always: the allowlist only sees the first reference in a string, while vals
+	   expands all of them. */
+	refs := make(map[string]string, len(secret.Spec.Data))
 	for k, v := range secret.Spec.Data {
-		if err := r.BackendAuthorizer.Authorize(secret.Namespace, v.Ref); err != nil {
+		ref := normalizeRef(v.Ref)
+		err := r.RefPolicy.Validate(ref)
+		if err == nil {
+			err = r.BackendAuthorizer.Authorize(secret.Namespace, ref)
+		}
+		if err != nil {
 			dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()
 			r.Log.Error(err, "Refusing to read backend reference",
 				"name", secret.Name, "namespace", secret.Namespace, "key", k)
@@ -255,12 +266,17 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			}
 			return ctrl.Result{}, nil
 		}
+		refs[k] = ref
 	}
 
+	/* Values read from a Kubernetes Secret are data, not references. They are
+	   kept out of vals.Eval so that a Secret holding `ref+file://...` is not
+	   expanded with the operator's privileges. */
 	secretYaml := make(map[string]interface{})
-	for k, v := range secret.Spec.Data {
-		if strings.HasPrefix(v.Ref, k8sSecretPrefix) {
-			secretYaml[k], err = r.getKeyFromK8sSecret(v.Ref, secret.Namespace)
+	k8sValues := make(map[string]interface{})
+	for k, ref := range refs {
+		if strings.HasPrefix(ref, k8sSecretPrefix) {
+			k8sValues[k], err = r.getKeyFromK8sSecret(ref, secret.Namespace)
 			if err != nil {
 				if r.recordingEnabled(&secret) {
 					msg := fmt.Sprintf("Failed to get key from existing k8s secret %v", err)
@@ -269,7 +285,7 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 				return r.errorBackoff(&secret)
 			}
 		} else {
-			secretYaml[k] = v.Ref
+			secretYaml[k] = ref
 		}
 	}
 
@@ -287,11 +303,17 @@ func (r *ValsSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return r.errorBackoff(&secret)
 	}
 	dmetrics.SecretRetrieveTime.WithLabelValues(secret.GetName(), secret.GetNamespace()).Set(float64(elapsedPull))
+	if valsRendered == nil {
+		valsRendered = make(map[string]interface{}, len(k8sValues))
+	}
+	for k, v := range k8sValues {
+		valsRendered[k] = v
+	}
 
 	data := make(map[string][]byte)
 	dataStr := make(map[string]string)
 	for k, v := range valsRendered {
-		if secret.Spec.Data[k].Encoding == "base64" && !strings.HasPrefix(secret.Spec.Data[k].Ref, k8sSecretPrefix) {
+		if secret.Spec.Data[k].Encoding == "base64" && !strings.HasPrefix(refs[k], k8sSecretPrefix) {
 			sDec, err := b64.StdEncoding.DecodeString(v.(string))
 			if err != nil {
 				dmetrics.SecretError.WithLabelValues(secret.Name, secret.Namespace).SetToCurrentTime()

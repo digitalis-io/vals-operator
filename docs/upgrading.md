@@ -5,7 +5,31 @@ Behaviour changes that need action when upgrading an existing deployment. See
 
 ## Current release
 
-Three changes need action.
+Four changes need action.
+
+### Providers and reference format
+
+`ValsSecret` references using `echo`, `envsubst`, `exec`, `file`, `gitlab`, `httpjson`, `keychain`, `sops`, `tfstate`, `tfstateazurerm`, `tfstategitlab`, `tfstategs`, `tfstateremote`, `tfstates3` are now rejected with a `Denied` event.
+They read from the operator's own pod, including its ServiceAccount token, or fetch
+from a host named in the reference. To keep using one, list it in
+`-allowed-extra-providers` (Helm value `allowedExtraProviders`). A provider not
+listed in [Security](security.md#providers) is rejected.
+
+A `ref` must now hold a single reference with no text around it, and may only use the
+query parameters listed in [Security](security.md#reference-format). A `ref` that
+combines several references, or passes `address`, `token_file` or similar, is
+rejected. Per-reference `address`, `namespace`, `profile` or `role_arn` must move to
+the operator's environment. A `ref+k8s://` reference must use that exact lower-case
+spelling. Literal values still work.
+
+A value read through `ref+k8s://` is no longer expanded a second time. If a source
+Secret holds a `ref+...` string, the target Secret now receives that string as it is.
+
+Find affected resources before upgrading:
+
+```sh
+kubectl get valssecrets -A -o yaml | grep -nE 'ref\+(echo|envsubst|exec|file|gitlab|httpjson|keychain|sops|tfstate[a-z0-9]*)://|ref\+.*ref\+|\?|K8S|secretref\+k8s'
+```
 
 ### Orphaned leases
 

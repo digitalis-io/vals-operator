@@ -161,9 +161,16 @@ func refHasPrefix(ref, prefix string) bool {
 	}
 
 	// The character right after the prefix has to be a separator, otherwise the
-	// prefix stopped in the middle of a path segment.
-	next := ref[len(prefix)]
-	return next == '/' || next == ':'
+	// prefix stopped in the middle of a path segment. ':' only separates after a
+	// bare scheme (`ref+vault` covering `ref+vault://...`) or inside an ARN;
+	// elsewhere it is part of a name.
+	switch ref[len(prefix)] {
+	case '/':
+		return true
+	case ':':
+		return !strings.Contains(prefix, "://") || strings.Contains(prefix, "://arn:")
+	}
+	return false
 }
 
 // canonicalDbSecretRef renders a DbSecret's mount and role as the backend

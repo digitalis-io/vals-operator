@@ -92,6 +92,7 @@ func main() {
 	var disableNamespaceSync bool
 	var allowedNamespacesForSync string
 	var allowedBackendPaths string
+	var allowedExtraProviders string
 	var enableCustomTargets bool
 	var allowedTargetResources string
 	var targetDryRun bool
@@ -114,6 +115,10 @@ func main() {
 			"namespace of '*' applies to all, e.g. "+
 			"'team-a=ref+vault://database/creds/team-a;*=ref+awssecrets://shared'. "+
 			"Empty means all paths are allowed.")
+	flag.StringVar(&allowedExtraProviders, "allowed-extra-providers", "",
+		"Comma separated list of vals providers, disabled by default, that ValsSecret references may use: "+
+			strings.Join(controllers.OptInProviderNames(), ", ")+". They read the operator's own files and "+
+			"environment, including its ServiceAccount token, or fetch from a host named in the reference. Empty means none.")
 	flag.BoolVar(&enableCustomTargets, "enable-custom-targets", false,
 		"Allow ValsSecret.spec.target to render data into resources other than Secrets. "+
 			"Requires -allowed-target-resources.")
@@ -185,6 +190,15 @@ func main() {
 		setupLog.Info("Backend path authorization is enabled")
 	}
 
+	refPolicy, err := controllers.NewRefPolicy(allowedExtraProviders)
+	if err != nil {
+		setupLog.Error(err, "Invalid -allowed-extra-providers")
+		os.Exit(1)
+	}
+	if allowed := refPolicy.AllowedExtra(); len(allowed) > 0 {
+		setupLog.Info("Extra vals providers are enabled for ValsSecret references", "providers", allowed)
+	}
+
 	setupLog.Info("The backends will be checked every " + defaultTTL.String())
 	var cacheOptions cache.Options
 	if watchNamespaces != "" {
@@ -243,6 +257,7 @@ func main() {
 		DisableNamespaceSync:     disableNamespaceSync,
 		AllowedNamespacesForSync: allowedSyncNs,
 		BackendAuthorizer:        backendAuthorizer,
+		RefPolicy:                refPolicy,
 		TargetPolicy:             targetPolicy,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ValsSecret")

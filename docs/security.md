@@ -21,7 +21,7 @@ the result written into a Secret in their own namespace.
 | Actor | Can do | Constrained by |
 |---|---|---|
 | Cluster admin | Everything | — |
-| Anyone with `create` on `ValsSecret`/`DbSecret` in a watched namespace | Read any backend path the operator's credential can read; read any Kubernetes Secret the operator can read, via `ref+k8s://` | `-allowed-backend-paths`, `-disable-namespace-sync`, `-allowed-namespaces-for-sync`, the operator's own backend policy and RBAC |
+| Anyone with `create` on `ValsSecret`/`DbSecret` in a watched namespace | Read any backend path the operator's credential can read; read any Kubernetes Secret the operator can read, via `ref+k8s://`; with `-allowed-extra-providers` set, read the operator's own files and environment or fetch from other hosts | `-allowed-backend-paths`, `-allowed-extra-providers`, `-disable-namespace-sync`, `-allowed-namespaces-for-sync`, the operator's own backend policy and RBAC |
 | Anyone with `get` on Secrets in a namespace | Read every synced value in that namespace | Kubernetes RBAC |
 | The operator | Read its configured backends; create/update Secrets and restart workloads in watched namespaces | Its backend policy, its RBAC, `-watch-namespaces`, `-exclude-namespaces` |
 
@@ -30,6 +30,8 @@ the result written into a Secret in their own namespace.
 | Threat | Mitigation |
 |---|---|
 | A tenant reads another tenant's backend paths through a `ValsSecret` or `DbSecret` | [`-allowed-backend-paths`](#restricting-backend-paths) |
+| A tenant reads the operator's ServiceAccount token, environment or files through `ref+file://`, `ref+envsubst://`, `ref+exec://` or `ref+echo://`, or makes the operator fetch from a host of their choosing | [These providers are disabled](#providers) unless listed in `-allowed-extra-providers`. |
+| A tenant hides a second reference after an allowed one, or points an allowed reference at another server with `?address=` or `user@host` | [Every reference is checked for shape](#reference-format) before the allowlist and before any backend call. Not configurable. |
 | A tenant reads another namespace's Kubernetes Secrets via `ref+k8s://` | [`-disable-namespace-sync`, `-allowed-namespaces-for-sync`](#cross-namespace-references) |
 | A template exfiltrates the operator's own environment, including its backend token | `env`, `expandenv` and `getHostByName` are removed from the template function set. Not configurable. |
 | A `DbSecret` overwrites an unrelated Secret by naming it in `secretName` | The operator refuses to write to a Secret it does not own. |
@@ -95,6 +97,13 @@ vals-operator -allowed-backend-paths='team-a=ref+vault://database/creds/team-a;*
 Prefixes match on path-segment boundaries, so `ref+vault://database/creds/team-a` does
 not cover `ref+vault://database/creds/team-abc`.
 
+Without an allowlist a `ValsSecret` can read any path the operator's backend
+credential can, including endpoints that describe that credential itself, such as
+`ref+vault://auth/token/lookup-self#id`. Set `-allowed-backend-paths` on any cluster
+where not everybody who can create a `ValsSecret` is trusted with that credential. Each `ref` must hold a single
+reference (see [Reference format](#reference-format)), so the prefix check sees
+everything vals will read.
+
 An empty value (the default) allows every path, so upgrading changes nothing until you
 configure it. A namespace with no matching entry is denied once the flag is set.
 Denied references are rejected **before any backend call is made**, and the reason is
@@ -104,6 +113,60 @@ recorded as an event naming the namespace and the rejected path:
 kubectl describe valssecret my-secret
 kubectl describe dbsecret my-db
 ```
+
+## Reference format
+
+Every `ref` in a `ValsSecret` is checked before the allowlist and before any backend
+call. This check always applies, with or without `-allowed-backend-paths`. A `ref`
+that fails it is not read at all and the reason is recorded as a `Denied` event.
+
+A `ref` must be either a literal value with no `ref+` in it, or exactly one
+`ref+<backend>://...` reference with nothing before or after it. vals expands every
+reference it finds in a string, including nested ones, so a second reference would
+otherwise be read without being checked:
+
+```yaml
+# Rejected: two references in one value.
+ref: "ref+vault://secret/team-a/app#key+ ref+vault://secret/platform/db#password+"
+```
+
+The path may not contain `.` or `..` segments, `%` or `\`, and its first segment may
+not contain `@` (except in an AWS ARN). An `azurekeyvault` reference must name a vault
+or a host under an Azure Key Vault domain. A Kubernetes
+reference must be spelled `ref+k8s://` exactly, so that it always goes through the
+[cross-namespace checks](#cross-namespace-references).
+
+Only these query parameters are accepted: `decode`, `encode`, `fallback_value`,
+`format`, `generation`, `optional`, `region`, `trim`, `trim_nl`, `version`,
+`version_id`, `version_stage`. Others are rejected because vals providers also take
+parameters that send the request to another server (`address`, `host`, `proto`) or
+load credentials from the operator's pod (`token_file`, `token_env`,
+`password_file`, `credentials_file`, `profile`, ...). Configure those on the operator
+instead, with environment variables. `region` must be a region name, and the other
+parameters, except `fallback_value`, may only hold letters, digits, `.`, `_` and `-`.
+
+### Providers
+
+Only providers that read from a secrets backend set up in the operator's own
+configuration are enabled by default: `awskms`, `awssecrets`, `awsssm`,
+`azurekeyvault`, `bw`, `conjur`, `doppler`, `gcpsecrets`, `gcs`, `gkms`,
+`googlesheets`, `hcpvaultsecrets`, `infisical`, `k8s`, `oci`, `onepasswordconnect`,
+`op`, `openbao`, `pulumistateapi`, `s3`, `scw`, `servercore`, `tss`, `vault` and
+`yclockbox`. A scheme vals adds in a later release is rejected until it is added
+to this list.
+
+These providers are disabled by default: `echo`, `envsubst`, `exec`, `file`, `gitlab`, `httpjson`, `keychain`, `sops`, `tfstate`, `tfstateazurerm`, `tfstategitlab`, `tfstategs`, `tfstateremote`, `tfstates3`. They read from the
+operator's own pod (its files, including the ServiceAccount token that can create
+workloads cluster-wide, its environment, which holds its backend credentials, or a
+command it runs), or fetch from a host or file named in the reference with the
+operator's network access and credentials.
+
+To allow some of them, list them in `-allowed-extra-providers` (Helm value
+`allowedExtraProviders`), for example `file,sops`. Only do this when everybody who
+can create a `ValsSecret` is trusted with the operator's own credentials.
+
+A value read through `ref+k8s://` is copied as it is. It is not expanded again, so a
+Secret holding `ref+file://...` is not a way round this rule.
 
 ## Cross-namespace references
 

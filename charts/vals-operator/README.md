@@ -27,8 +27,8 @@ Here at [Digitalis](https://digitalis.io) we love [vals](https://github.com/helm
 The operator needs credentials for at least one secrets backend. See
 [Secrets backends](https://github.com/digitalis-io/vals-operator/blob/main/docs/backends.md).
 
-On any cluster where namespaces are not all equally trusted, also set `allowedBackendPaths` and
-restrict cross-namespace `ref+k8s://` references — see
+On any cluster where namespaces are not all equally trusted, also set `allowedBackendPaths`,
+leave `allowedExtraProviders` empty, and restrict cross-namespace `ref+k8s://` references — see
 [Security](https://github.com/digitalis-io/vals-operator/blob/main/docs/security.md).
 
 ## Maintainers
@@ -47,6 +47,7 @@ Kubernetes: `>= 1.19.0-0`
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for the operator pod. |
 | allowedBackendPaths | string | `""` | Renders `-allowed-backend-paths`, e.g. `"team-a=ref+vault://database/creds/team-a;*=ref+awssecrets://shared"`. Restrict which backend paths each namespace may read. This covers BOTH the references in a ValsSecret (every backend, not just ref+k8s://) and the mount and role named by a DbSecret, so that restricting one resource cannot be sidestepped through the other.  Semicolon-separated "namespace=prefix[,prefix...]" entries. A namespace of "*" applies to every namespace, in addition to any namespace-specific entry. Prefixes match on path-segment boundaries.  Empty string (the default) allows every path the operator's backend credential can read. Set this on any cluster where namespaces are not all equally trusted: the operator holds one credential for all namespaces, so anybody who can create a ValsSecret or DbSecret otherwise inherits its full reach. |
+| allowedExtraProviders | string | `""` | Renders `-allowed-extra-providers`, e.g. `"file,sops"`. Comma-separated list of vals providers, disabled by default, that ValsSecret references may use: `echo`, `envsubst`, `exec`, `file`, `gitlab`, `httpjson`, `keychain`, `sops`, `tfstate`, `tfstateazurerm`, `tfstategitlab`, `tfstategs`, `tfstateremote`, `tfstates3`. Empty string (the default) rejects them all: they read the operator's own files and environment, including its ServiceAccount token, or fetch from a host named in the reference with the operator's credentials. |
 | allowedNamespacesForSync | string | `""` | Renders `-allowed-namespaces-for-sync`, e.g. `"shared-secrets,platform"`. Comma-separated list of namespaces that may be referenced via ref+k8s://. Empty string means all namespaces are allowed (unless disableNamespaceSync is true). |
 | args | list | `[]` | Additional command-line flags for the operator, e.g. `["-exclude-namespaces=kube-system", "-ttl=15m"]`. See https://github.com/digitalis-io/vals-operator/blob/main/docs/configuration.md |
 | customTargets.allowedResources | list | `[]` | Resources that `spec.target` may write. Each entry renders both the `-allowed-target-resources` flag and the matching ClusterRole rule, so RBAC and the allow-list cannot drift. `group: ""` is the core group. Example:   - resource: configmaps     group: ""   - resource: flinkdeployments     group: flink.apache.org |

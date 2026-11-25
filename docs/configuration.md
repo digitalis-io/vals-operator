@@ -82,6 +82,7 @@ whatever `args` contains.
 | `disableNamespaceSync` | bool | `false` | Renders `-disable-namespace-sync`. Blocks all cross-namespace `ref+k8s://` references. |
 | `allowedNamespacesForSync` | string | `""` | Renders `-allowed-namespaces-for-sync`. Example: `"shared-secrets,platform"`. |
 | `allowedBackendPaths` | string | `""` | Renders `-allowed-backend-paths`. Example: `"team-a=ref+vault://database/creds/team-a;*=ref+awssecrets://shared"`. See [Security](security.md#restricting-backend-paths). |
+| `allowedExtraProviders` | string | `""` | Renders `-allowed-extra-providers`. Comma-separated vals providers that are disabled by default: `echo`, `envsubst`, `exec`, `file`, `gitlab`, `httpjson`, `keychain`, `sops`, `tfstate`, `tfstateazurerm`, `tfstategitlab`, `tfstategs`, `tfstateremote`, `tfstates3`. Empty rejects them all. Example: `"file,sops"`. See [Security](security.md#providers). |
 | `customTargets.enabled` | bool | `false` | Renders `-enable-custom-targets`. See [Custom targets](security.md#custom-targets). |
 | `customTargets.dryRun` | bool | `true` | Renders `-target-dry-run`. |
 | `customTargets.allowedResources` | list | `[]` | Resources `spec.target` may write; each entry is `{resource, group}` (`group: ""` for core). Renders both `-allowed-target-resources` and the matching ClusterRole rules. Example: `[{resource: configmaps, group: ""}, {resource: flinkdeployments, group: flink.apache.org}]`. |

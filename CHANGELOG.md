@@ -7,6 +7,10 @@ Vals-operator uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- A user able to create a `ValsSecret` could read the operator's ServiceAccount token, its environment and files through the `file`, `exec`, `envsubst` and `echo` providers, make it fetch from hosts of their choosing through providers such as `httpjson`, and bypass `-allowed-backend-paths` by placing a second reference after an allowed one in the same `ref`, by adding `user@` before the host, or by passing query parameters such as `address` or `token_file`. Every `ref` must now be a literal or exactly one reference with no surrounding text, may not use `.`, `..`, `%` or `\` in its path or `@` before its first `/`, must name an Azure Key Vault host for `azurekeyvault`, and may only use the query parameters listed in docs/security.md. Only providers backed by an operator-configured secrets backend are enabled by default; the others are rejected unless listed in the new `-allowed-extra-providers` flag (Helm: `allowedExtraProviders`). `ref+k8s://` must be spelled exactly, so it cannot reach vals' own k8s provider and skip the namespace-sync checks. Values read through `ref+k8s://` are no longer expanded again. See docs/upgrading.md before upgrading.
+
 ### Added
 
 - ClickHouse + OpenBao e2e test stack (`hack/docker-compose-e2e.yml`): rotation path, DbSecret path, and failure cases. ([#107](https://github.com/digitalis-io/vals-operator/issues/107))

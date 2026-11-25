@@ -112,6 +112,16 @@ allowedNamespacesForSync: ""
 # a ValsSecret or DbSecret otherwise inherits its full reach.
 allowedBackendPaths: ""
 
+# -- Renders `-allowed-extra-providers`, e.g. `"file,sops"`.
+# Comma-separated list of vals providers, disabled by default, that ValsSecret
+# references may use: `echo`, `envsubst`, `exec`, `file`, `gitlab`, `httpjson`,
+# `keychain`, `sops`, `tfstate`, `tfstateazurerm`, `tfstategitlab`, `tfstategs`,
+# `tfstateremote`, `tfstates3`. Empty string (the default) rejects them all:
+# they read the operator's own files and environment, including its
+# ServiceAccount token, or fetch from a host named in the reference with the
+# operator's credentials.
+allowedExtraProviders: ""
+
 # Custom targets: render ValsSecret data into resources other than Secrets
 # (ConfigMaps, CRDs such as FlinkDeployment, ...) via `spec.target`.
 # See docs/usage.md#custom-targets and docs/security.md#custom-targets.

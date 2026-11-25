@@ -165,3 +165,19 @@ func TestRefHasPrefix(t *testing.T) {
 		})
 	}
 }
+
+func TestRefHasPrefixColon(t *testing.T) {
+	for _, tt := range []struct {
+		ref, prefix string
+		want        bool
+	}{
+		{"ref+vault://secret/team-a/app", "ref+vault", true},
+		{"ref+vault://secret:x@other/y", "ref+vault://secret", false},
+		{"ref+vault://secret/team-a:foo", "ref+vault://secret/team-a", false},
+		{"ref+awssecrets://arn:aws:secretsmanager:eu-west-1:1:secret:a", "ref+awssecrets://arn:aws:secretsmanager:eu-west-1:1", true},
+	} {
+		if got := refHasPrefix(tt.ref, tt.prefix); got != tt.want {
+			t.Errorf("refHasPrefix(%q, %q) = %v, want %v", tt.ref, tt.prefix, got, tt.want)
+		}
+	}
+}
